@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Otaku Tracker: Custom Edition</title>
+    <style>
+        :root { --bg: #09090b; --card: #18181b; --accent: #ff4757; --green: #2ecc71; --text: #ffffff; }
+        body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 15px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        
+        /* Header & Toggle */
+        header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #27272a; padding-bottom: 10px; }
+        .toggle-area { display: flex; align-items: center; gap: 10px; font-size: 0.8rem; background: #27272a; padding: 5px 12px; border-radius: 20px; }
+        
+        /* Switch UI */
+        .switch { position: relative; display: inline-block; width: 34px; height: 20px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #555; transition: .4s; border-radius: 20px; }
+        .slider:before { position: absolute; content: ""; height: 14px; width: 14px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; }
+        input:checked + .slider { background-color: var(--accent); }
+        input:checked + .slider:before { transform: translateX(14px); }
+
+        /* Search */
+        .search-box { display: flex; gap: 8px; margin: 20px 0; }
+        input[type="text"] { flex: 1; padding: 12px; background: #27272a; border: 1px solid #3f3f46; border-radius: 8px; color: white; }
+        .search-btn { padding: 12px 20px; background: var(--accent); border: none; border-radius: 8px; color: white; font-weight: bold; cursor: pointer; }
+
+        /* Grid & Cards */
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 15px; }
+        .card { background: var(--card); border-radius: 12px; border: 1px solid #27272a; overflow: hidden; position: relative; }
+        .card img { width: 100%; aspect-ratio: 2/3; object-fit: cover; }
+        .info { padding: 12px; }
+        .title { font-size: 0.85rem; font-weight: bold; height: 2.4em; overflow: hidden; margin-bottom: 10px; }
+        
+        .stats { display: flex; justify-content: space-between; background: #000; padding: 8px; border-radius: 8px; margin-bottom: 10px; }
+        .val { font-size: 1rem; font-weight: 800; }
+        .val.up { color: var(--green); }
+        .badge { position: absolute; top: 10px; right: 10px; background: var(--accent); color: white; font-weight: 900; padding: 4px 8px; border-radius: 6px; font-size: 0.7rem; }
+        .remove { display: block; text-align: center; color: #444; font-size: 0.65rem; margin-top: 10px; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <h1 style="font-size: 1.2rem;">OTAKU<span style="color:var(--accent)">TRACK</span></h1>
+        <div class="toggle-area">
+            <span>Adult Content</span>
+            <label class="switch">
+                <input type="checkbox" id="adultToggle" onchange="saveToggle()">
+                <span class="slider"></span>
+            </label>
+        </div>
+    </header>
+
+    <div class="search-box">
+        <input type="text" id="sInput" placeholder="Search (Monster, One Piece, etc)...">
+        <button class="search-btn" onclick="searchManga()">SEARCH</button>
+    </div>
+
+    <div id="searchView" style="display:none; margin-bottom: 30px;">
+        <div class="grid" id="searchGrid"></div>
+    </div>
+
+    <div class="grid" id="libGrid"></div>
+</div>
+
+<script>
+    let db = JSON.parse(localStorage.getItem('final_tracker_v2')) || [];
+
+    window.onload = () => { 
+        // Load toggle state
+        document.getElementById('adultToggle').checked = JSON.parse(localStorage.getItem('adult_enabled')) || false;
+        render(); 
+        sync(); 
+    };
+
+    function saveToggle() {
+        localStorage.setItem('adult_enabled', document.getElementById('adultToggle').checked);
+    }
+
+    async function searchManga() {
+        const q = document.getElementById('sInput').value;
+        const isAdult = document.getElementById('adultToggle').checked;
+        const grid = document.getElementById('searchGrid');
+        document.getElementById('searchView').style.display = 'block';
+        grid.innerHTML = 'Searching...';
+
+        // GraphQL Query: adult filter depends on toggle
+        const query = `query ($s: String, $adult: Boolean) { 
+            Page(perPage: 5) { 
+                media(search: $s, type: MANGA, isAdult: $adult) { 
+                    id title { english romaji } coverImage { large } chapters 
+                } 
+            } 
+        }`;
+        
+        try {
+            const resp = await fetch('https://graphql.anilist.co', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ query, variables: { s: q, adult: isAdult ? undefined : false } })
+            });
+            const { data } = await resp.json();
+            grid.innerHTML = '';
+            data.Page.media.forEach(m => {
+                const title = m.title.english || m.title.romaji;
+                grid.innerHTML += `
+                    <div class="card">
+                        <img src="${m.coverImage.large}">
+                        <div class="info">
+                            <div class="title">${title}</div>
+                            <button style="width:100%" onclick="add('${m.id}', '${title.replace(/'/g, "")}', '${m.coverImage.large}', ${m.chapters || 0})">ADD</button>
+                        </div>
+                    </div>`;
+            });
+        } catch(e) { grid.innerHTML = 'Error.'; }
+    }
+
+    function add(id, title, img, chapters) {
+        if(db.some(x => x.id === id)) return;
+        db.push({ id, title, img, read: 0, latest: chapters || 0 });
+        save(); render(); sync();
+        document.getElementById('searchView').style.display = 'none';
+    }
+
+    async function sync() {
+        for(let item of db) {
+            const name = item.title.toLowerCase();
+            // 2026 Manual Overrides
+            if(name === "monster") item.latest = 162;
+            if(name === "one piece") item.latest = 1170;
+            if(name === "naruto") item.latest = 700;
+            if(name.includes("gachiakuta")) item.latest = 160;
+        }
+        save(); render();
+    }
+
+    function adjust(id, amt) {
+        const item = db.find(x => x.id === id);
+        item.read = Math.max(0, parseFloat((item.read + amt).toFixed(1)));
+        save(); render();
+    }
+
+    function render() {
+        const grid = document.getElementById('libGrid');
+        grid.innerHTML = '';
+        db.forEach(item => {
+            const diff = (item.latest - item.read).toFixed(0);
+            grid.innerHTML += `
+                <div class="card">
+                    ${diff > 0 ? `<div class="badge">${diff} NEW</div>` : ''}
+                    <img src="${item.img}">
+                    <div class="info">
+                        <div class="title">${item.title}</div>
+                        <div class="stats">
+                            <div style="text-align:center"><span class="label">Read</span><span class="val">${item.read}</span></div>
+                            <div style="text-align:center"><span class="label">Latest</span><span class="val ${diff > 0 ? 'up' : ''}">${item.latest}</span></div>
+                        </div>
+                        <div style="display:flex; gap:5px;">
+                            <button style="flex:1; padding:8px;" onclick="adjust('${item.id}', -1)">-</button>
+                            <button style="flex:1; padding:8px;" onclick="adjust('${item.id}', 1)">+</button>
+                        </div>
+                        <span class="remove" onclick="remove('${item.id}')">Remove</span>
+                    </div>
+                </div>`;
+        });
+    }
+
+    function remove(id) { db = db.filter(x => x.id !== id); save(); render(); }
+    function save() { localStorage.setItem('final_tracker_v2', JSON.stringify(db)); }
+</script>
+
+</body>
+</html>
