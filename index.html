@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="referrer" content="no-referrer">
-    
     <title>Manga Tracker Live</title>
     <style>
         :root {
@@ -15,6 +14,7 @@
             --accent: #ff6740;
             --green: #00c853;
             --blue: #2962ff;
+            --danger: #ff5252;
         }
 
         body {
@@ -84,6 +84,11 @@
         .btn-act { padding: 6px 12px; font-size: 0.8rem; background: #333; color: #ccc; }
         .btn-remove { color: #ff5252; background: none; padding: 6px; }
 
+        .error-box {
+            color: var(--danger); background: rgba(255, 82, 82, 0.1);
+            padding: 15px; border-radius: 8px; text-align: center;
+        }
+
     </style>
 </head>
 <body>
@@ -112,7 +117,7 @@
     const API = 'https://api.mangadex.org';
     const COVERS = 'https://uploads.mangadex.org/covers';
     
-    // Data Structure
+    // --- Data ---
     let library = JSON.parse(localStorage.getItem('manga_auto_v1')) || [];
 
     document.addEventListener('DOMContentLoaded', () => {
@@ -120,7 +125,7 @@
         refreshAll();
     });
 
-    // --- Search ---
+    // --- Search with FIX ---
     async function search() {
         const q = document.getElementById('search-input').value.trim();
         if(!q) return;
@@ -130,10 +135,12 @@
         view.innerHTML = '<div style="padding:20px; text-align:center; color:#666">Searching...</div>';
         
         try {
-            // Fix: Added error handling specifically for the search
-            const res = await fetch(`${API}/manga?title=${encodeURIComponent(q)}&limit=10&includes[]=cover_art&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica`);
+            // THE FIX: referrerPolicy: 'no-referrer' hides your GitHub URL from MangaDex
+            const res = await fetch(`${API}/manga?title=${encodeURIComponent(q)}&limit=10&includes[]=cover_art&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica`, {
+                referrerPolicy: 'no-referrer'
+            });
             
-            if (!res.ok) throw new Error(`API Error: ${res.status}`);
+            if (!res.ok) throw new Error(`Status: ${res.status}`);
             
             const data = await res.json();
             view.innerHTML = '';
@@ -164,7 +171,13 @@
             });
         } catch(e) { 
             console.error(e);
-            view.innerHTML = `<div style="padding:20px; text-align:center; color:#ff5252">Search Failed.<br><small>${e.message}</small></div>`; 
+            view.innerHTML = `
+                <div class="error-box">
+                    <strong>Search Failed</strong><br>
+                    <small>${e.message}</small><br>
+                    <small>Try waiting 10 seconds (Rate Limit) or refresh.</small>
+                </div>
+            `; 
         }
     }
 
@@ -187,7 +200,7 @@
         }
     }
 
-    // --- Auto-Update Logic ---
+    // --- Auto-Update Logic with FIX ---
     async function refreshAll() {
         const btn = document.getElementById('refresh-btn');
         btn.textContent = 'Updating...';
@@ -199,7 +212,10 @@
 
     async function refreshItem(item) {
         try {
-            const res = await fetch(`${API}/chapter?manga=${item.id}&order[chapter]=desc&limit=1`);
+            // THE FIX: referrerPolicy: 'no-referrer'
+            const res = await fetch(`${API}/chapter?manga=${item.id}&order[chapter]=desc&limit=1`, {
+                referrerPolicy: 'no-referrer'
+            });
             const data = await res.json();
 
             if(data.data && data.data.length) {
