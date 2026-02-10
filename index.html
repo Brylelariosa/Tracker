@@ -116,8 +116,7 @@
 <script>
     const API = 'https://api.mangadex.org';
     const COVERS = 'https://uploads.mangadex.org/covers';
-    // PROXY: This helps us bypass the GitHub/CORS block
-    const PROXY_BASE = 'https://api.allorigins.win/raw?url=';
+    const PROXY_BASE = 'https://api.allorigins.win/get?url=';
     
     let library = JSON.parse(localStorage.getItem('manga_auto_v1')) || [];
 
@@ -126,13 +125,20 @@
         refreshAll();
     });
 
-    // --- Helper to fetch data safely ---
+    // --- PROXY FIX: Unwrap the data properly ---
     async function fetchSafe(targetUrl) {
-        // We wrap the MangaDex URL inside the Proxy URL
         const finalUrl = PROXY_BASE + encodeURIComponent(targetUrl);
         const res = await fetch(finalUrl);
         if (!res.ok) throw new Error(`Proxy Error: ${res.status}`);
-        return await res.json();
+        
+        const proxyData = await res.json();
+        
+        // The Proxy returns data inside a "contents" string. We must parse that string.
+        if (proxyData.contents) {
+            return JSON.parse(proxyData.contents);
+        } else {
+            throw new Error('Proxy returned empty content');
+        }
     }
 
     // --- Search ---
@@ -180,7 +186,6 @@
                 <div class="error-box">
                     <strong>Connection Failed</strong><br>
                     <small>${e.message}</small><br>
-                    <small>If this persists, the proxy might be busy. Try again in a moment.</small>
                 </div>
             `; 
         }
@@ -192,8 +197,12 @@
         if(!library.find(x => x.id === id)) {
             library.push({ id, title, img, lastChap: '...', lastLang: '', lastCheck: 0 });
             save();
-            alert('Added!');
-            refreshItem(library[library.length-1]);
+            alert('Added! Fetching data...');
+            // Immediately fetch specific item
+            refreshItem(library[library.length-1]).then(() => {
+                save();
+                renderLib();
+            });
         }
     }
 
@@ -217,8 +226,8 @@
 
     async function refreshItem(item) {
         try {
-            // Add a timestamp to prevent caching old data
             const cacheBuster = `&_=${Date.now()}`;
+            // Use 'limit=1' to just get the latest chapter
             const url = `${API}/chapter?manga=${item.id}&order[chapter]=desc&limit=1${cacheBuster}`;
             
             const data = await fetchSafe(url);
