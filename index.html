@@ -3,7 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Live Manga Tracker</title>
+    <meta name="referrer" content="no-referrer">
+    
+    <title>Manga Tracker Live</title>
     <style>
         :root {
             --bg: #121212;
@@ -25,7 +27,6 @@
 
         .container { max-width: 800px; margin: 0 auto; }
 
-        /* Header */
         header {
             display: flex; justify-content: space-between; align-items: center;
             border-bottom: 1px solid #333; padding-bottom: 15px; margin-bottom: 20px;
@@ -38,7 +39,6 @@
             box-shadow: 0 2px 5px rgba(0,0,0,0.2);
         }
 
-        /* Search */
         .search-area { display: flex; gap: 10px; margin-bottom: 20px; }
         input {
             flex: 1; padding: 12px; border-radius: 6px; border: 1px solid #333;
@@ -46,15 +46,10 @@
         }
         .btn-search { background: var(--accent); color: white; padding: 0 20px; }
 
-        /* Tabs */
         .tabs { display: flex; gap: 20px; margin-bottom: 20px; border-bottom: 1px solid #333; }
-        .tab { 
-            padding: 10px; cursor: pointer; color: var(--sub); 
-            border-bottom: 2px solid transparent; 
-        }
+        .tab { padding: 10px; cursor: pointer; color: var(--sub); border-bottom: 2px solid transparent; }
         .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
 
-        /* List Layout */
         .list { display: flex; flex-direction: column; gap: 15px; }
 
         .card {
@@ -68,20 +63,15 @@
         }
 
         .info { flex: 1; display: flex; flex-direction: column; justify-content: space-between; }
-        
         .title { font-size: 1.1rem; font-weight: bold; line-height: 1.2; margin-bottom: 5px; }
         
-        .status-row { 
-            display: flex; align-items: center; gap: 10px; margin-bottom: 10px; 
-        }
+        .status-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
 
-        /* The Important Badge */
         .badge {
             padding: 4px 10px; border-radius: 4px; font-size: 0.85rem; font-weight: bold;
             display: flex; align-items: center; gap: 6px;
         }
         .badge.latest { background: rgba(0, 200, 83, 0.15); color: var(--green); border: 1px solid rgba(0, 200, 83, 0.3); }
-        .badge.waiting { background: #333; color: #aaa; }
         .badge.licensed { background: rgba(255, 171, 0, 0.15); color: #ffab00; border: 1px solid rgba(255, 171, 0, 0.3); }
 
         .lang-tag { 
@@ -90,11 +80,8 @@
         }
 
         .meta { font-size: 0.75rem; color: #888; margin-top: 2px; }
-
-        /* Buttons */
         .actions { display: flex; gap: 10px; margin-top: 5px; }
         .btn-act { padding: 6px 12px; font-size: 0.8rem; background: #333; color: #ccc; }
-        .btn-act:hover { background: #444; color: white; }
         .btn-remove { color: #ff5252; background: none; padding: 6px; }
 
     </style>
@@ -125,7 +112,7 @@
     const API = 'https://api.mangadex.org';
     const COVERS = 'https://uploads.mangadex.org/covers';
     
-    // Data: { id, title, img, lastChap, lastLang, lastCheck, status }
+    // Data Structure
     let library = JSON.parse(localStorage.getItem('manga_auto_v1')) || [];
 
     document.addEventListener('DOMContentLoaded', () => {
@@ -143,7 +130,11 @@
         view.innerHTML = '<div style="padding:20px; text-align:center; color:#666">Searching...</div>';
         
         try {
+            // Fix: Added error handling specifically for the search
             const res = await fetch(`${API}/manga?title=${encodeURIComponent(q)}&limit=10&includes[]=cover_art&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica`);
+            
+            if (!res.ok) throw new Error(`API Error: ${res.status}`);
+            
             const data = await res.json();
             view.innerHTML = '';
 
@@ -165,18 +156,21 @@
                         <div class="title">${title}</div>
                         <div class="actions">
                             <button class="btn-act" style="background:var(--accent); color:white" 
-                                onclick="add('${m.id}', '${escape(title)}', '${img}')">Track</button>
+                                onclick="add('${m.id}', '${escapeHtml(title)}', '${img}')">Track</button>
                         </div>
                     </div>
                 `;
                 view.appendChild(div);
             });
-        } catch(e) { view.innerHTML = 'Error searching.'; }
+        } catch(e) { 
+            console.error(e);
+            view.innerHTML = `<div style="padding:20px; text-align:center; color:#ff5252">Search Failed.<br><small>${e.message}</small></div>`; 
+        }
     }
 
     // --- Library Logic ---
     function add(id, title, img) {
-        title = unescape(title);
+        title = unescapeHtml(title);
         if(!library.find(x => x.id === id)) {
             library.push({ id, title, img, lastChap: '...', lastLang: '', lastCheck: 0 });
             save();
@@ -205,8 +199,6 @@
 
     async function refreshItem(item) {
         try {
-            // TRICK: We fetch *without* specifying language. 
-            // This gets the absolute latest upload (ES, PT, ID, etc.)
             const res = await fetch(`${API}/chapter?manga=${item.id}&order[chapter]=desc&limit=1`);
             const data = await res.json();
 
@@ -216,13 +208,13 @@
                 item.lastLang = chap.translatedLanguage ? chap.translatedLanguage.toUpperCase() : 'RAW';
                 item.status = 'ok';
             } else {
-                // If ZERO chapters exist, it's likely licensed/blocked
                 item.lastChap = '?';
                 item.status = 'licensed';
             }
             item.lastCheck = Date.now();
         } catch(e) {
             console.error(e);
+            item.status = 'error';
         }
     }
 
@@ -236,7 +228,6 @@
             return;
         }
 
-        // Sort: Items with recent updates first
         library.sort((a,b) => b.lastCheck - a.lastCheck);
 
         library.forEach(item => {
@@ -247,14 +238,12 @@
             let actionHtml = '';
 
             if (item.status === 'licensed') {
-                // Special case for Gachiakuta
                 badgeHtml = `<div class="badge licensed">No Data (Licensed)</div>`;
                 actionHtml = `
                     <button class="btn-act" onclick="googleSearch('${item.title}')">Google It ➜</button>
                     <button class="btn-remove" onclick="remove('${item.id}')">Drop</button>
                 `;
             } else {
-                // Normal Manga
                 badgeHtml = `
                     <div class="badge latest">
                         Ch. ${item.lastChap}
@@ -269,7 +258,7 @@
                 `;
             }
 
-            const time = item.lastCheck ? 'Updated just now' : ''; // simplified for demo
+            const time = item.lastCheck ? 'Updated just now' : ''; 
 
             div.innerHTML = `
                 <img src="${item.img || 'https://via.placeholder.com/80x120'}" class="cover">
@@ -291,8 +280,7 @@
     }
 
     function googleSearch(title) {
-        const query = `${title} manga latest chapter`;
-        window.open(`https://www.google.com/search?q=${encodeURIComponent(query)}`, '_blank');
+        window.open(`https://www.google.com/search?q=${encodeURIComponent(title + ' manga latest chapter')}`, '_blank');
     }
 
     // --- Utils ---
@@ -303,8 +291,8 @@
         document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
         document.querySelector(`.tab[onclick="switchTab('${t}')"]`).classList.add('active');
     }
-    function escape(s) { return s.replace(/'/g, "&apos;").replace(/"/g, "&quot;"); }
-    function unescape(s) { return s.replace(/&apos;/g, "'").replace(/&quot;/g, '"'); }
+    function escapeHtml(s) { return s.replace(/'/g, "&apos;").replace(/"/g, "&quot;"); }
+    function unescapeHtml(s) { return s.replace(/&apos;/g, "'").replace(/&quot;/g, '"'); }
 
 </script>
 
