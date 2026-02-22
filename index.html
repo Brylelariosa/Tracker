@@ -327,12 +327,8 @@ async function searchMD(title) {
   return d.data || [];
 }
 
-async function getLatestCh(mdId) {
-  // Run MangaDex strategies and ComicK lookup in parallel, return the highest value found
-  const candidates = [];
-
-  // ── MangaDex strategies ──────────────────────────────────────────────────
-  // Strategy 1: aggregate (all languages) — deduplicates per chapter number
+async function getLatestCh(mdId, title = '') {
+  // ── MangaDex: aggregate (all languages) ─────────────────────────────────
   const mdAggregate = (async () => {
     try {
       const d = await mdFetch(`/manga/${mdId}/aggregate`);
@@ -347,7 +343,7 @@ async function getLatestCh(mdId) {
     return null;
   })();
 
-  // Strategy 2: feed endpoint (all languages, desc order)
+  // ── MangaDex: feed endpoint ──────────────────────────────────────────────
   const mdFeed = (async () => {
     try {
       const path = `/manga/${mdId}/feed?limit=96&order[chapter]=desc&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic`;
@@ -360,7 +356,7 @@ async function getLatestCh(mdId) {
     return null;
   })();
 
-  // Strategy 3: lastChapter attribute
+  // ── MangaDex: lastChapter attribute ─────────────────────────────────────
   const mdAttr = (async () => {
     try {
       const d = await mdFetch(`/manga/${mdId}`);
@@ -370,41 +366,92 @@ async function getLatestCh(mdId) {
     return null;
   })();
 
-  // ── ComicK fallback (often more up-to-date than MangaDex) ───────────────
-  // ComicK can search by MangaDex ID directly
+  // ── ComicK: search by MangaDex UUID (their API supports this) ───────────
   const comickLatest = (async () => {
     try {
-      // Look up manga on ComicK using the MangaDex ID
-      const searchUrl = PROXY + encodeURIComponent(`${COMICK}/v1.0/search?q=${mdId}&limit=1`);
-      const sr = await fetch(searchUrl, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
-      if (!sr.ok) return null;
-      const results = await sr.json();
-      const slug = results?.[0]?.slug;
-      if (!slug) return null;
-
-      // Get latest chapters for this slug
-      const chapUrl = PROXY + encodeURIComponent(`${COMICK}/comic/${slug}/chapters?lang=en&limit=1&page=1&chap-order=desc`);
-      const cr = await fetch(chapUrl, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
-      if (!cr.ok) return null;
-      const chapData = await cr.json();
-      const chap = parseFloat(chapData?.chapters?.[0]?.chap);
-      if (!isNaN(chap) && chap > 0) return chap;
-
-      // Also try without lang filter for any language
-      const chapUrlAny = PROXY + encodeURIComponent(`${COMICK}/comic/${slug}/chapters?limit=1&page=1&chap-order=desc`);
-      const cra = await fetch(chapUrlAny, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
-      if (!cra.ok) return null;
-      const chapDataAny = await cra.json();
-      const chapAny = parseFloat(chapDataAny?.chapters?.[0]?.chap);
-      if (!isNaN(chapAny) && chapAny > 0) return chapAny;
+      // ComicK supports lookup by MangaDex UUID via their /comic endpoint
+      const infoUrl = PROXY + encodeURIComponent(`${COMICK}/comic/${mdId}`);
+      const ir = await fetch(infoUrl, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+      if (ir.ok) {
+        const info = await ir.json();
+        const slug = info?.comic?.slug || info?.slug;
+        if (slug) {
+          // Get chapters sorted desc, no lang filter to catch all scanlations
+          const chapUrl = PROXY + encodeURIComponent(`${COMICK}/comic/${slug}/chapters?limit=1&page=1&chap-order=desc`);
+          const cr = await fetch(chapUrl, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+          if (cr.ok) {
+            const chapData = await cr.json();
+            const chap = parseFloat(chapData?.chapters?.[0]?.chap);
+            if (!isNaN(chap) && chap > 0) return chap;
+          }
+        }
+      }
+      // Fallback: search ComicK by title
+      if (title) {
+        const sq = PROXY + encodeURIComponent(`${COMICK}/v1.0/search?q=${encodeURIComponent(title)}&limit=5`);
+        const sr = await fetch(sq, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+        if (sr.ok) {
+          const results = await sr.json();
+          const slug = results?.[0]?.slug;
+          if (slug) {
+            const chapUrl = PROXY + encodeURIComponent(`${COMICK}/comic/${slug}/chapters?limit=1&page=1&chap-order=desc`);
+            const cr = await fetch(chapUrl, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+            if (cr.ok) {
+              const chapData = await cr.json();
+              const chap = parseFloat(chapData?.chapters?.[0]?.chap);
+              if (!isNaN(chap) && chap > 0) return chap;
+            }
+          }
+        }
+      }
     } catch {}
     return null;
   })();
 
-  // Wait for all in parallel
-  const [v1, v2, v3, v4] = await Promise.all([mdAggregate, mdFeed, mdAttr, comickLatest]);
-  const all = [v1, v2, v3, v4].filter(v => v !== null && v > 0);
-  if (all.length) return Math.max(...all);
+  // ── MangaTown scrape: reliable third-party aggregator ───────────────────
+  const mangaTownLatest = (async () => {
+    if (!title) return null;
+    try {
+      // Build slug: lowercase, spaces → underscores, strip special chars
+      const slug = title.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim().replace(/\s+/g, '_');
+      const url = PROXY + encodeURIComponent(`https://www.mangatown.com/manga/${slug}/`);
+      const res = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+      if (!res.ok) return null;
+      const html = await res.text();
+      // Chapter list items look like: <li><a href=".../c063/">Chapter 63</a>
+      const matches = [...html.matchAll(/Chapter\s+([\d.]+)/gi)];
+      const nums = matches.map(m => parseFloat(m[1])).filter(n => !isNaN(n) && n > 0);
+      if (nums.length) return Math.max(...nums);
+    } catch {}
+    return null;
+  })();
+
+  // ── Bato.to: another reliable aggregator with a search API ──────────────
+  const batoLatest = (async () => {
+    if (!title) return null;
+    try {
+      const searchUrl = PROXY + encodeURIComponent(`https://bato.to/search?word=${encodeURIComponent(title)}&lang=en`);
+      const res = await fetch(searchUrl, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+      if (!res.ok) return null;
+      const html = await res.text();
+      // Find first series link
+      const seriesMatch = html.match(/href="(\/title\/\d+[^"]+)"/);
+      if (!seriesMatch) return null;
+      const seriesUrl = PROXY + encodeURIComponent('https://bato.to' + seriesMatch[1]);
+      const sr = await fetch(seriesUrl, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+      if (!sr.ok) return null;
+      const shtml = await sr.text();
+      const cmatches = [...shtml.matchAll(/ch[._-]?([\d]+(?:\.\d+)?)/gi)];
+      const nums = cmatches.map(m => parseFloat(m[1])).filter(n => !isNaN(n) && n > 0);
+      if (nums.length) return Math.max(...nums);
+    } catch {}
+    return null;
+  })();
+
+  // Run all in parallel, return the highest value found across all sources
+  const results = await Promise.all([mdAggregate, mdFeed, mdAttr, comickLatest, mangaTownLatest, batoLatest]);
+  const valid = results.filter(v => v !== null && v > 0);
+  if (valid.length) return Math.max(...valid);
   return null;
 }
 
@@ -542,7 +589,7 @@ async function checkAllUpdates() {
 
   for (const m of tracked) {
     try {
-      let latest = await getLatestCh(m.mdId);
+      let latest = await getLatestCh(m.mdId, m.title);
       if (latest === null) { errors++; continue; }
 
       if (latest > (m.chLatest || 0)) {
@@ -706,7 +753,7 @@ async function selectMD(info) {
 
   showToast('Fetching latest chapter from MangaDex…');
   try {
-    const ch = await getLatestCh(info.id);
+    const ch = await getLatestCh(info.id, info.title);
     if (ch !== null) {
       // Use whichever is higher: feed-based or lastChapter attribute
       const existing = parseFloat(document.getElementById('f-chlatest').value) || 0;
