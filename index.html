@@ -406,8 +406,6 @@ header { padding: 28px 0 20px; border-bottom: 1px solid var(--border); display: 
 
 <script>
 // ── CONSTANTS ────────────────────────────────────────────────────────────────
-// Using corsproxy.io — free CORS proxy, works for MangaDex API calls from browser
-const PROXY = 'https://corsproxy.io/?';
 const MD = 'https://api.mangadex.org';
 const COVERS = 'https://uploads.mangadex.org/covers';
 const COMICK = 'https://api.comick.fun';
@@ -424,11 +422,21 @@ function uid() { return Math.random().toString(36).slice(2, 10); }
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 // ── API ──────────────────────────────────────────────────────────────────────
+const PROXIES = [
+  'https://corsproxy.io/?',
+  'https://api.allorigins.win/raw?url=',
+  'https://thingproxy.freeboard.io/fetch/',
+];
+
 async function mdFetch(path) {
-  const url = PROXY + encodeURIComponent(MD + path);
-  const res = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
+  const target = MD + path;
+  for (const proxy of PROXIES) {
+    try {
+      const res = await fetch(proxy + encodeURIComponent(target), { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+      if (res.ok) return res.json();
+    } catch {}
+  }
+  throw new Error('All proxies failed for: ' + path);
 }
 
 async function searchMD(title) {
@@ -440,8 +448,16 @@ async function getLatestCh(mdId, title = '', type = '') {
   const isManhwa = type === 'manhwa';
   const isManga  = type === 'manga';
 
-  // ── Helper: proxied fetch ────────────────────────────────────────────────
-  const pFetch = (url, opts = {}) => fetch(PROXY + encodeURIComponent(url), { headers: { 'X-Requested-With': 'XMLHttpRequest' }, ...opts });
+  // ── Helper: proxied fetch with fallback proxies ──────────────────────────
+  const pFetch = async (url, opts = {}) => {
+    for (const proxy of PROXIES) {
+      try {
+        const res = await fetch(proxy + encodeURIComponent(url), { headers: { 'X-Requested-With': 'XMLHttpRequest' }, ...opts });
+        if (res.ok) return res;
+      } catch {}
+    }
+    return { ok: false };
+  };
 
   // ── MangaDex aggregate (all languages, deduplicates per chapter number) ──
   const mdAgg = (async () => {
@@ -877,12 +893,8 @@ document.getElementById('export-modal').addEventListener('click', e => { if (e.t
 function coverUrl(manga) {
   const rel = (manga.relationships || []).find(r => r.type === 'cover_art');
   if (!rel?.attributes?.fileName) return null;
-  
-  // Construct the original MangaDex image URL
   const imageUrl = `${COVERS}/${manga.id}/${rel.attributes.fileName}.256.jpg`;
-  
-  // Wrap it in the proxy just like the mdFetch function does
-  return PROXY + encodeURIComponent(imageUrl);
+  return PROXIES[0] + encodeURIComponent(imageUrl);
 }
 
 function mdType(manga) {
@@ -1003,35 +1015,47 @@ async function checkAllUpdates() {
   btn.classList.add('spinning');
   btn.disabled = true;
 
-  let found = 0, errors = 0, done = 0;
+  let found = 0, done = 0;
+  const failed = [];
   const total = tracked.length;
   showToast(`Checking ${total} manga…`);
 
-  // Process in parallel batches of 5 to avoid hammering APIs
-  const BATCH = 5;
+  const BATCH = 4;
   for (let i = 0; i < tracked.length; i += BATCH) {
     const batch = tracked.slice(i, i + BATCH);
     await Promise.all(batch.map(async (m) => {
       try {
-        const latest = await getLatestCh(m.mdId, m.title, m.type);
+        let latest = await getLatestCh(m.mdId, m.title, m.type);
+
+        // If all sources failed, retry once after a short pause
+        if (latest === null) {
+          await sleep(800);
+          latest = await getLatestChFallback(m.mdId, m.title);
+        }
+
         done++;
-        if (latest === null) { errors++; return; }
+        if (latest === null) {
+          failed.push(m.title);
+          return;
+        }
         if (latest > (m.chLatest || 0)) {
           const old = m.chLatest || 0;
           m.chLatest = latest;
           m.hasNew = true;
           found++;
           updLog.unshift({ id: uid(), mangaId: m.id, title: m.title, type: m.type, oldCh: old, newCh: latest, cover: m.cover || '', time: Date.now(), read: false });
-        } else if (latest > 0 && latest > (m.chLatest || 0)) {
-          m.chLatest = latest;
+        } else if (latest > 0) {
+          m.chLatest = Math.max(m.chLatest || 0, latest);
         }
-      } catch { errors++; }
+      } catch(e) {
+        done++;
+        failed.push(m.title);
+      }
     }));
-    // Update toast progress after each batch
-    showToast(`Checking… ${Math.min(done + BATCH, total)}/${total}`);
+
+    showToast(`Checking… ${done}/${total}`);
     saveLib();
     renderLib();
-    // Small pause between batches to be polite to APIs
     if (i + BATCH < tracked.length) await sleep(300);
   }
 
@@ -1043,9 +1067,58 @@ async function checkAllUpdates() {
   btn.classList.remove('spinning');
   btn.disabled = false;
 
-  if (found > 0) showToast(`🎉 ${found} new chapter update${found > 1 ? 's' : ''} found!`);
-  else if (errors > 0) showToast(`Checked. ${errors} failed, rest up to date.`, 'err');
-  else showToast('All up to date ✓');
+  if (found > 0 && failed.length === 0) {
+    showToast(`🎉 ${found} new chapter update${found > 1 ? 's' : ''} found!`);
+  } else if (found > 0 && failed.length > 0) {
+    showToast(`🎉 ${found} updates! ${failed.length} couldn't be fetched.`, 'err');
+    console.warn('Failed to fetch chapters for:', failed);
+  } else if (failed.length > 0) {
+    // Show which ones failed so user knows
+    showToast(`${failed.length} failed: ${failed.slice(0,2).join(', ')}${failed.length > 2 ? '…' : ''}`, 'err');
+    console.warn('Failed titles:', failed);
+  } else {
+    showToast('All up to date ✓');
+  }
+}
+
+// ── FALLBACK: direct MangaDex only, no proxy-heavy scraping ──────────────────
+async function getLatestChFallback(mdId, title) {
+  // Try multiple proxy services in case corsproxy.io is rate-limiting
+  const proxies = [
+    'https://corsproxy.io/?',
+    'https://api.allorigins.win/raw?url=',
+    'https://thingproxy.freeboard.io/fetch/',
+  ];
+
+  for (const proxy of proxies) {
+    try {
+      const url = proxy + encodeURIComponent(`${MD}/manga/${mdId}/aggregate`);
+      const res = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+      if (!res.ok) continue;
+      const d = await res.json();
+      const nums = [];
+      for (const vol of Object.values(d.volumes || {}))
+        for (const ch of Object.values(vol.chapters || {})) {
+          const n = parseFloat(ch.chapter);
+          if (!isNaN(n) && n > 0) nums.push(n);
+        }
+      if (nums.length) return Math.max(...nums);
+    } catch {}
+  }
+
+  // Last resort: MangaDex lastChapter attribute via alternate proxy
+  for (const proxy of proxies) {
+    try {
+      const url = proxy + encodeURIComponent(`${MD}/manga/${mdId}`);
+      const res = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+      if (!res.ok) continue;
+      const d = await res.json();
+      const n = parseFloat(d.data?.attributes?.lastChapter);
+      if (!isNaN(n) && n > 0) return n;
+    } catch {}
+  }
+
+  return null;
 }
 
 // ── ACTIONS ───────────────────────────────────────────────────────────────────
