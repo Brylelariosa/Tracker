@@ -433,16 +433,22 @@ const PROXIES = [
 
 async function mdFetch(path) {
   const target = MD + path;
+  // MangaDex API natively supports CORS — try direct first (no URL mangling, fastest)
+  try {
+    const res = await fetch(target, { signal: AbortSignal.timeout(8000) });
+    if (res.ok) return res.json();
+  } catch {}
+  // Proxy fallback only if direct call fails
   for (const proxy of PROXIES) {
     try {
       const res = await fetch(proxy + encodeURIComponent(target), {
         headers: { 'X-Requested-With': 'XMLHttpRequest' },
-        signal: AbortSignal.timeout(5000)
+        signal: AbortSignal.timeout(8000)
       });
       if (res.ok) return res.json();
     } catch {}
   }
-  throw new Error('All proxies failed for: ' + path);
+  throw new Error('MangaDex unreachable: ' + path);
 }
 
 async function searchMD(title) {
@@ -762,8 +768,8 @@ document.getElementById('export-modal').addEventListener('click', e => { if (e.t
 function coverUrl(manga) {
   const rel = (manga.relationships || []).find(r => r.type === 'cover_art');
   if (!rel?.attributes?.fileName) return null;
-  const imageUrl = `${COVERS}/${manga.id}/${rel.attributes.fileName}.256.jpg`;
-  return PROXIES[0] + encodeURIComponent(imageUrl);
+  // Use direct URL — MangaDex uploads support CORS
+  return `${COVERS}/${manga.id}/${rel.attributes.fileName}.256.jpg`;
 }
 
 function mdType(manga) {
