@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <meta name="referrer" content="no-referrer">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>MangaTrack — Real Chapter Updates</title>
@@ -343,7 +344,12 @@ async function getLatestCh(mdId) {
 function coverUrl(manga) {
   const rel = (manga.relationships || []).find(r => r.type === 'cover_art');
   if (!rel?.attributes?.fileName) return null;
-  return `${COVERS}/${manga.id}/${rel.attributes.fileName}.256.jpg`;
+  
+  // Construct the original MangaDex image URL
+  const imageUrl = `${COVERS}/${manga.id}/${rel.attributes.fileName}.256.jpg`;
+  
+  // Wrap it in the proxy just like the mdFetch function does
+  return PROXY + encodeURIComponent(imageUrl);
 }
 
 function mdType(manga) {
