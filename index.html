@@ -161,6 +161,27 @@ header { padding: 28px 0 20px; border-bottom: 1px solid var(--border); display: 
 .info-note { background:var(--surface); border:1px solid var(--border); border-left:3px solid var(--accent3); padding:10px 14px; font-size:10px; color:var(--muted); line-height:1.6; letter-spacing:.5px; }
 .info-note strong { color:var(--accent3); }
 
+/* Import/Export */
+.ie-tabs { display:flex; gap:0; border-bottom:1px solid var(--border); margin-bottom:16px; }
+.ie-tab { background:none; border:none; border-bottom:2px solid transparent; color:var(--muted); font-family:'DM Mono',monospace; font-size:10px; letter-spacing:2px; text-transform:uppercase; padding:10px 16px; cursor:pointer; margin-bottom:-1px; transition:all .2s; }
+.ie-tab.active { color:var(--accent3); border-bottom-color:var(--accent3); }
+.ie-panel { display:none; } .ie-panel.active { display:flex; flex-direction:column; gap:12px; }
+.drop-zone { border:2px dashed var(--border); padding:30px; text-align:center; cursor:pointer; transition:all .2s; color:var(--muted); font-size:10px; letter-spacing:1px; }
+.drop-zone:hover,.drop-zone.drag-over { border-color:var(--accent3); color:var(--accent3); }
+.drop-zone input { display:none; }
+.drop-icon { font-size:32px; margin-bottom:8px; }
+.import-preview { background:var(--surface); border:1px solid var(--border); max-height:180px; overflow-y:auto; }
+.preview-row { display:flex; align-items:center; gap:8px; padding:7px 12px; border-bottom:1px solid var(--border); font-size:10px; }
+.preview-row:last-child { border-bottom:none; }
+.preview-status { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+.ps-ok{background:var(--success)} .ps-dup{background:var(--accent2)} .ps-err{background:var(--accent)}
+.preview-title { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.preview-meta { color:var(--muted); font-size:9px; white-space:nowrap; }
+.export-opt { display:flex; gap:8px; flex-wrap:wrap; }
+.textarea-raw { background:var(--surface); border:1px solid var(--border); color:var(--text); padding:10px 12px; font-family:'DM Mono',monospace; font-size:10px; width:100%; min-height:120px; outline:none; resize:vertical; line-height:1.6; }
+.textarea-raw:focus { border-color:var(--accent3); }
+.import-progress { font-size:10px; color:var(--accent3); letter-spacing:1px; text-align:center; padding:8px; display:none; }
+
 @media(max-width:600px){.logo-title{font-size:30px}.stats{gap:16px}.form-row{grid-template-columns:1fr}.grid{grid-template-columns:1fr 1fr}}
 @media(max-width:400px){.grid{grid-template-columns:1fr}}
 </style>
@@ -173,6 +194,8 @@ header { padding: 28px 0 20px; border-bottom: 1px solid var(--border); display: 
       <div class="logo-sub">Live updates via MangaDex API</div>
     </div>
     <div class="header-right">
+      <button class="btn btn-outline" onclick="openImport()">⬆ IMPORT</button>
+      <button class="btn btn-outline" onclick="openExport()">⬇ EXPORT</button>
       <button class="btn btn-outline" id="checkBtn" onclick="checkAllUpdates()">
         <span class="spin-icon">↻</span> CHECK UPDATES
       </button>
@@ -294,6 +317,91 @@ header { padding: 28px 0 20px; border-bottom: 1px solid var(--border); display: 
 </div>
 
 <div class="toast" id="toast"></div>
+
+<!-- IMPORT MODAL -->
+<div class="overlay" id="import-modal">
+  <div class="modal" style="max-width:580px">
+    <div class="modal-hd">
+      <div class="modal-title">IMPORT LIST</div>
+      <button class="close-btn" onclick="closeImport()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="ie-tabs">
+        <button class="ie-tab active" onclick="switchIETab('paste')">📋 Paste List</button>
+        <button class="ie-tab" onclick="switchIETab('file')">📁 Upload File</button>
+        <button class="ie-tab" onclick="switchIETab('bulk')">⚡ Bulk MangaDex</button>
+      </div>
+
+      <!-- Paste Tab -->
+      <div class="ie-panel active" id="ie-paste">
+        <div class="info-note">
+          <strong>Format:</strong> One title per line. Optionally add chapter read after a comma.<br>
+          Example: <code>Jujutsu Kaisen, 15</code> or just <code>One Piece</code>
+        </div>
+        <textarea class="textarea-raw" id="paste-input" placeholder="Jujutsu Kaisen Modulo, 20&#10;Witch Hat Atelier, 55&#10;Majo to Youhei&#10;One Piece, 1100"></textarea>
+        <button class="btn btn-primary" style="align-self:flex-start" onclick="parsePasteInput()">PREVIEW IMPORT</button>
+        <div id="paste-preview"></div>
+        <div class="import-progress" id="paste-progress"></div>
+      </div>
+
+      <!-- File Tab -->
+      <div class="ie-panel" id="ie-file">
+        <div class="info-note">
+          <strong>Supported formats:</strong> JSON (exported from this app), or CSV with columns: title, chRead, chLatest, type, readingStatus
+        </div>
+        <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()" ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event)">
+          <input type="file" id="file-input" accept=".json,.csv,.txt" onchange="onFileSelect(event)">
+          <div class="drop-icon">📂</div>
+          <div>Drop JSON or CSV file here, or click to browse</div>
+          <div style="margin-top:6px;font-size:9px;opacity:.5">Supports .json · .csv · .txt</div>
+        </div>
+        <div id="file-preview"></div>
+        <div class="import-progress" id="file-progress"></div>
+      </div>
+
+      <!-- Bulk MangaDex Tab -->
+      <div class="ie-panel" id="ie-bulk">
+        <div class="info-note">
+          <strong>MangaDex IDs:</strong> Paste MangaDex manga IDs (one per line) to bulk-add with auto-fetched data.
+        </div>
+        <textarea class="textarea-raw" id="bulk-input" placeholder="a1c7c817-4e59-43b7-9365-09675a149a6f&#10;e78a489b-6632-4d61-b00b-5d7bcd83b7db&#10;..."></textarea>
+        <button class="btn btn-primary" style="align-self:flex-start" onclick="bulkMDImport()">FETCH & IMPORT</button>
+        <div class="import-progress" id="bulk-progress"></div>
+      </div>
+    </div>
+    <div class="modal-ft" id="import-footer" style="display:none">
+      <button class="btn btn-outline" onclick="closeImport()">Cancel</button>
+      <button class="btn btn-primary" id="do-import-btn" onclick="doImport()">IMPORT ALL</button>
+    </div>
+  </div>
+</div>
+
+<!-- EXPORT MODAL -->
+<div class="overlay" id="export-modal">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-hd">
+      <div class="modal-title">EXPORT LIBRARY</div>
+      <button class="close-btn" onclick="closeExport()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="info-note">
+        Export your full library (<strong id="export-count">0</strong> manga) to save or transfer to another device.
+      </div>
+      <div class="export-opt">
+        <button class="btn btn-primary" onclick="exportJSON()">⬇ Download JSON</button>
+        <button class="btn btn-outline" onclick="exportCSV()">⬇ Download CSV</button>
+        <button class="btn btn-outline" onclick="exportText()">⬇ Plain Text List</button>
+      </div>
+      <div>
+        <div class="form-label" style="margin-bottom:6px">Preview (JSON)</div>
+        <textarea class="textarea-raw" id="export-preview" readonly style="min-height:180px;opacity:.6"></textarea>
+      </div>
+    </div>
+    <div class="modal-ft">
+      <button class="btn btn-outline" onclick="closeExport()">Close</button>
+    </div>
+  </div>
+</div>
 
 <script>
 // ── CONSTANTS ────────────────────────────────────────────────────────────────
@@ -448,12 +556,306 @@ async function getLatestCh(mdId, title = '') {
     return null;
   })();
 
+  // ── MangaPlus: official source for WSJ titles (JJK, One Piece, etc.) ───
+  const mangaPlusLatest = (async () => {
+    if (!title) return null;
+    try {
+      // MangaPlus has a title search API
+      const enc = encodeURIComponent(title);
+      const url = PROXY + encodeURIComponent(`https://jumpg-webapi.tokyo-cdn.com/api/title_list/all`);
+      const res = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest', 'User-Agent': 'Mozilla/5.0' } });
+      if (!res.ok) return null;
+      const data = await res.json();
+      const titleList = data?.success?.allTitlesView?.titles || [];
+      const norm = title.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const match = titleList.find(t => {
+        const tn = (t.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        return tn === norm || tn.includes(norm) || norm.includes(tn);
+      });
+      if (!match) return null;
+      // Fetch individual title details for chapter count
+      const detailUrl = PROXY + encodeURIComponent(`https://jumpg-webapi.tokyo-cdn.com/api/title_detailV3?title_id=${match.titleId}`);
+      const dr = await fetch(detailUrl, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+      if (!dr.ok) return null;
+      const detail = await dr.json();
+      const chapters = detail?.success?.titleDetailView?.chapterListGroup || [];
+      const chNums = chapters.flatMap(g => [...(g.firstChapterList||[]), ...(g.lastChapterList||[])])
+        .map(c => parseFloat(c.name?.replace(/[^0-9.]/g,'')))
+        .filter(n => !isNaN(n) && n > 0);
+      if (chNums.length) return Math.max(...chNums);
+    } catch {}
+    return null;
+  })();
+
   // Run all in parallel, return the highest value found across all sources
-  const results = await Promise.all([mdAggregate, mdFeed, mdAttr, comickLatest, mangaTownLatest, batoLatest]);
+  const results = await Promise.all([mdAggregate, mdFeed, mdAttr, comickLatest, mangaTownLatest, batoLatest, mangaPlusLatest]);
   const valid = results.filter(v => v !== null && v > 0);
   if (valid.length) return Math.max(...valid);
   return null;
 }
+
+// ── IMPORT / EXPORT ───────────────────────────────────────────────────────────
+let importQueue = []; // pending items to import
+let currentIETab = 'paste';
+
+function openImport() {
+  importQueue = [];
+  document.getElementById('import-modal').classList.add('open');
+  document.getElementById('import-footer').style.display = 'none';
+  document.getElementById('paste-input').value = '';
+  document.getElementById('bulk-input').value = '';
+  document.getElementById('paste-preview').innerHTML = '';
+  document.getElementById('file-preview').innerHTML = '';
+  switchIETab('paste');
+}
+function closeImport() { document.getElementById('import-modal').classList.remove('open'); }
+
+function openExport() {
+  document.getElementById('export-count').textContent = lib.length;
+  const preview = lib.map(m => ({ title: m.title, type: m.type, readingStatus: m.readingStatus, chRead: m.chRead, chLatest: m.chLatest, mdId: m.mdId || '' }));
+  document.getElementById('export-preview').value = JSON.stringify(preview, null, 2);
+  document.getElementById('export-modal').classList.add('open');
+}
+function closeExport() { document.getElementById('export-modal').classList.remove('open'); }
+
+function switchIETab(name) {
+  currentIETab = name;
+  document.querySelectorAll('.ie-tab').forEach((t,i) => t.classList.toggle('active', ['paste','file','bulk'][i] === name));
+  document.querySelectorAll('.ie-panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('ie-' + name).classList.add('active');
+  document.getElementById('import-footer').style.display = 'none';
+  importQueue = [];
+}
+
+// ── PASTE IMPORT ─────────────────────────────────────────────────────────────
+function parsePasteInput() {
+  const raw = document.getElementById('paste-input').value.trim();
+  if (!raw) { showToast('Paste some titles first!', 'err'); return; }
+  const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
+  importQueue = lines.map(line => {
+    const parts = line.split(',');
+    const title = parts[0].trim();
+    const chRead = parseFloat(parts[1]) || 0;
+    const existing = lib.find(m => m.title.toLowerCase() === title.toLowerCase());
+    return { title, chRead, status: existing ? 'dup' : 'ok', existing };
+  });
+  renderImportPreview('paste-preview');
+}
+
+function renderImportPreview(containerId) {
+  const container = document.getElementById(containerId);
+  if (!importQueue.length) { container.innerHTML = ''; return; }
+  const okCount = importQueue.filter(i => i.status === 'ok').length;
+  const dupCount = importQueue.filter(i => i.status === 'dup').length;
+  container.innerHTML = `
+    <div style="font-size:9px;color:var(--muted);padding:8px 0;letter-spacing:1px">
+      ${okCount} NEW · ${dupCount} ALREADY IN LIBRARY (will skip)
+    </div>
+    <div class="import-preview">
+      ${importQueue.map(item => `
+        <div class="preview-row">
+          <span class="preview-status ${item.status === 'ok' ? 'ps-ok' : item.status === 'dup' ? 'ps-dup' : 'ps-err'}"></span>
+          <span class="preview-title">${esc(item.title)}</span>
+          <span class="preview-meta">${item.chRead ? 'Ch.' + item.chRead : ''} ${item.status === 'dup' ? '· SKIP' : item.status === 'err' ? '· ERROR' : '· NEW'}</span>
+        </div>`).join('')}
+    </div>`;
+  const hasNew = importQueue.some(i => i.status === 'ok');
+  document.getElementById('import-footer').style.display = hasNew ? 'flex' : 'none';
+}
+
+async function doImport() {
+  const toAdd = importQueue.filter(i => i.status === 'ok');
+  if (!toAdd.length) { showToast('Nothing new to import!', 'err'); return; }
+
+  const prog = document.getElementById(currentIETab + '-progress');
+  prog.style.display = 'block';
+  document.getElementById('do-import-btn').disabled = true;
+
+  let added = 0;
+  for (let i = 0; i < toAdd.length; i++) {
+    const item = toAdd[i];
+    prog.textContent = `IMPORTING ${i+1}/${toAdd.length}: ${item.title}…`;
+
+    try {
+      // Search MangaDex for the title
+      const results = await searchMD(item.title);
+      const match = results[0];
+      if (match) {
+        const title = match.attributes.title.en || Object.values(match.attributes.title)[0] || item.title;
+        const mdId = match.id;
+        const type = mdType(match);
+        const status = match.attributes.status || 'ongoing';
+        // Fetch cover
+        let cover = '';
+        try {
+          const d = await mdFetch(`/manga/${mdId}?includes[]=cover_art`);
+          cover = coverUrl(d.data) || '';
+        } catch {}
+        const chLatest = await getLatestCh(mdId, title);
+        lib.push({
+          id: uid(), title, mdId, cover,
+          seriesStatus: status, type,
+          readingStatus: item.readingStatus || 'reading',
+          chRead: item.chRead || 0,
+          chLatest: chLatest || item.chLatest || item.chRead || 0,
+          hasNew: (chLatest || 0) > (item.chRead || 0),
+          addedAt: Date.now()
+        });
+      } else {
+        // Add without MangaDex data
+        lib.push({
+          id: uid(), title: item.title, mdId: '', cover: '',
+          seriesStatus: 'ongoing', type: item.type || 'manga',
+          readingStatus: item.readingStatus || 'reading',
+          chRead: item.chRead || 0, chLatest: item.chLatest || item.chRead || 0,
+          hasNew: false, addedAt: Date.now()
+        });
+      }
+      added++;
+      saveLib();
+    } catch(e) {}
+    await sleep(500);
+  }
+
+  prog.textContent = `✓ Done! Added ${added} manga.`;
+  renderLib();
+  showToast(`Imported ${added} manga ✓`);
+  document.getElementById('do-import-btn').disabled = false;
+  setTimeout(() => { if (added > 0) closeImport(); }, 1500);
+}
+
+// ── FILE IMPORT ───────────────────────────────────────────────────────────────
+function onDragOver(e) { e.preventDefault(); document.getElementById('drop-zone').classList.add('drag-over'); }
+function onDragLeave(e) { document.getElementById('drop-zone').classList.remove('drag-over'); }
+function onDrop(e) {
+  e.preventDefault();
+  document.getElementById('drop-zone').classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file) processFile(file);
+}
+function onFileSelect(e) { if (e.target.files[0]) processFile(e.target.files[0]); }
+
+function processFile(file) {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const content = e.target.result;
+    try {
+      if (file.name.endsWith('.json')) {
+        parseJSONImport(content);
+      } else {
+        parseCSVImport(content);
+      }
+    } catch(err) {
+      showToast('Could not parse file: ' + err.message, 'err');
+    }
+  };
+  reader.readAsText(file);
+}
+
+function parseJSONImport(content) {
+  const data = JSON.parse(content);
+  const items = Array.isArray(data) ? data : data.library || data.lib || [];
+  importQueue = items.map(item => {
+    const title = item.title || item.name || '';
+    if (!title) return null;
+    const existing = lib.find(m => m.title.toLowerCase() === title.toLowerCase());
+    return {
+      title, chRead: parseFloat(item.chRead) || 0, chLatest: parseFloat(item.chLatest) || 0,
+      type: item.type || 'manga', readingStatus: item.readingStatus || 'reading',
+      mdId: item.mdId || '', status: existing ? 'dup' : 'ok'
+    };
+  }).filter(Boolean);
+  renderImportPreview('file-preview');
+}
+
+function parseCSVImport(content) {
+  const lines = content.trim().split('\n');
+  const header = lines[0].toLowerCase().split(',').map(h => h.trim().replace(/"/g,''));
+  const idx = (name) => header.findIndex(h => h.includes(name));
+  const ti = idx('title'), ci = idx('chread'), li = idx('latest'), tyi = idx('type'), si = idx('status');
+  importQueue = lines.slice(1).map(line => {
+    const cols = line.split(',').map(c => c.trim().replace(/"/g,''));
+    const title = ti >= 0 ? cols[ti] : cols[0];
+    if (!title) return null;
+    const existing = lib.find(m => m.title.toLowerCase() === title.toLowerCase());
+    return {
+      title, chRead: parseFloat(ci >= 0 ? cols[ci] : cols[1]) || 0,
+      chLatest: parseFloat(li >= 0 ? cols[li] : 0) || 0,
+      type: tyi >= 0 ? cols[tyi] : 'manga',
+      readingStatus: si >= 0 ? cols[si] : 'reading',
+      status: existing ? 'dup' : 'ok'
+    };
+  }).filter(Boolean);
+  renderImportPreview('file-preview');
+}
+
+// ── BULK MANGADEX IMPORT ──────────────────────────────────────────────────────
+async function bulkMDImport() {
+  const raw = document.getElementById('bulk-input').value.trim();
+  if (!raw) { showToast('Paste some MangaDex IDs first!', 'err'); return; }
+  const ids = raw.split('\n').map(l => l.trim()).filter(l => l.length > 10);
+  if (!ids.length) { showToast('No valid IDs found', 'err'); return; }
+
+  const prog = document.getElementById('bulk-progress');
+  prog.style.display = 'block';
+  let added = 0;
+
+  for (let i = 0; i < ids.length; i++) {
+    const mdId = ids[i];
+    prog.textContent = `FETCHING ${i+1}/${ids.length}…`;
+    if (lib.find(m => m.mdId === mdId)) { prog.textContent += ' (skip, already exists)'; await sleep(200); continue; }
+    try {
+      const d = await mdFetch(`/manga/${mdId}?includes[]=cover_art`);
+      const manga = d.data;
+      const title = manga.attributes.title.en || Object.values(manga.attributes.title)[0] || mdId;
+      const type = mdType(manga);
+      const cover = coverUrl(manga) || '';
+      const seriesStatus = manga.attributes.status || 'ongoing';
+      const chLatest = await getLatestCh(mdId, title);
+      lib.push({ id: uid(), title, mdId, cover, seriesStatus, type, readingStatus: 'reading', chRead: 0, chLatest: chLatest || 0, hasNew: (chLatest||0) > 0, addedAt: Date.now() });
+      added++;
+      saveLib();
+    } catch(e) {}
+    await sleep(500);
+  }
+
+  prog.textContent = `✓ Done! Added ${added} manga.`;
+  renderLib();
+  showToast(`Bulk imported ${added} manga ✓`);
+  setTimeout(() => { if (added > 0) closeImport(); }, 1500);
+}
+
+// ── EXPORT ────────────────────────────────────────────────────────────────────
+function exportJSON() {
+  const data = lib.map(m => ({ title: m.title, type: m.type, readingStatus: m.readingStatus, chRead: m.chRead, chLatest: m.chLatest, mdId: m.mdId || '', seriesStatus: m.seriesStatus || 'ongoing', cover: m.cover || '' }));
+  downloadFile('mangatrack-library.json', JSON.stringify(data, null, 2), 'application/json');
+  showToast('JSON exported ✓');
+}
+
+function exportCSV() {
+  const header = 'title,type,readingStatus,chRead,chLatest,mdId,seriesStatus';
+  const rows = lib.map(m => [m.title, m.type, m.readingStatus, m.chRead||0, m.chLatest||0, m.mdId||'', m.seriesStatus||'ongoing'].map(v => `"${String(v).replace(/"/g,'""')}"`).join(','));
+  downloadFile('mangatrack-library.csv', [header, ...rows].join('\n'), 'text/csv');
+  showToast('CSV exported ✓');
+}
+
+function exportText() {
+  const lines = lib.map(m => `${m.title} (Ch.${m.chRead||0}/${m.chLatest||'?'})`);
+  downloadFile('mangatrack-library.txt', lines.join('\n'), 'text/plain');
+  showToast('Text list exported ✓');
+}
+
+function downloadFile(name, content, mime) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([content], { type: mime }));
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+// Close import/export on overlay click
+document.getElementById('import-modal').addEventListener('click', e => { if (e.target===e.currentTarget) closeImport(); });
+document.getElementById('export-modal').addEventListener('click', e => { if (e.target===e.currentTarget) closeExport(); });
 
 function coverUrl(manga) {
   const rel = (manga.relationships || []).find(r => r.type === 'cover_art');
