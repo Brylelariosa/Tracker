@@ -260,7 +260,7 @@ header { padding: 28px 0 20px; border-bottom: 1px solid var(--border); display: 
     </div>
     <div class="modal-body">
       <div class="info-note">
-        <strong>How it works:</strong> Search for a title below to auto-fill from MangaDex. Updates are fetched from <strong style="color:var(--accent3)">6 free APIs</strong> — MangaDex, ComicK, AniList, Kitsu, and more — always picking the highest (most up-to-date) chapter number.
+        <strong>How it works:</strong> Search for a title to auto-fill from MangaDex. Latest chapter is fetched automatically from MangaDex, ComicK, and MangaUpdates — never set manually. Hit <strong style="color:var(--accent3)">Check Updates</strong> anytime to refresh all.
       </div>
 
       <div class="form-group" id="search-section">
@@ -301,8 +301,9 @@ header { padding: 28px 0 20px; border-bottom: 1px solid var(--border); display: 
           <input class="form-input" id="f-chread" type="number" min="0" step="0.1" placeholder="0">
         </div>
         <div class="form-group">
-          <label class="form-label">Latest Ch. <span style="color:var(--accent3);font-size:8px">auto</span></label>
-          <input class="form-input" id="f-chlatest" type="number" min="0" step="0.1" placeholder="auto-fetched">
+          <label class="form-label">Latest Ch. <span style="color:var(--accent3);font-size:8px">auto-fetched</span></label>
+          <div class="form-input" id="f-chlatest-display" style="color:var(--muted);font-size:11px;display:flex;align-items:center;min-height:36px">Fetching…</div>
+          <input type="hidden" id="f-chlatest" value="0">
         </div>
       </div>
       <div class="form-group">
@@ -796,7 +797,7 @@ function renderLib() {
   }
 
   grid.innerHTML = items.map(m => {
-    const hasNew = m.hasNew && (m.chLatest || 0) > (m.chRead || 0);
+    const hasNew = m.hasNew && (m.chLatest > 0) && ((m.chLatest || 0) > (m.chRead || 0));
     const ss = m.seriesStatus || 'ongoing';
     const rlabel = {reading:'Reading',completed:'Completed','on-hold':'On Hold',dropped:'Dropped',plan:'Plan to Read'}[m.readingStatus] || m.readingStatus;
     const slabel = {ongoing:'Ongoing',completed:'Completed',hiatus:'Hiatus',cancelled:'Cancelled'}[ss] || ss;
@@ -810,11 +811,10 @@ function renderLib() {
         <div class="card-meta">
           <div>
             <div class="ch-read">Read: Ch.${m.chRead || 0}</div>
-            <div class="ch-latest${hasNew?' new':''}">Latest: Ch.${m.chLatest ?? '?'}${hasNew?' ↑':''}</div>
+            <div class="ch-latest${hasNew?' new':''}">Latest: ${m.chLatest > 0 ? 'Ch.'+m.chLatest : '?'}${hasNew?' ↑':''}</div>
           </div>
           <div class="card-actions">
             <button class="icon-btn" title="Mark chapter read" onclick="markRead('${m.id}')">✓</button>
-            <button class="icon-btn" title="Set latest chapter manually" onclick="setLatest('${m.id}')">✎ch</button>
             <button class="icon-btn" title="Edit" onclick="openEdit('${m.id}')">✎</button>
             <button class="icon-btn del" title="Remove" onclick="del('${m.id}')">✕</button>
           </div>
@@ -898,50 +898,48 @@ async function dFetch(url, opts = {}, timeout = 5000) {
 // ── TITLE NORMALIZER ─────────────────────────────────────────────────────────
 const norm = s => String(s).toLowerCase().replace(/[^a-z0-9]/g, '');
 
-// Similarity score: how many chars of needle exist in haystack (0–1)
 function titleSim(a, b) {
   const na = norm(a), nb = norm(b);
+  if (!na || !nb) return 0;
   if (na === nb) return 1;
   if (nb.includes(na) || na.includes(nb)) return 0.9;
-  // Count matching chars
   let match = 0;
   for (let i = 0; i < Math.min(na.length, nb.length); i++) if (na[i] === nb[i]) match++;
   return match / Math.max(na.length, nb.length);
 }
 
 // ── GET LATEST CHAPTER ────────────────────────────────────────────────────────
-// Strategy: MangaDex UUID sources are authoritative (exact match guaranteed).
-// Title-search sources (ComicK search, MangaUpdates, AniList) are used only if:
-//   - Similarity score > 0.85 (strict matching to avoid wrong series)
-//   - AniList/Kitsu ONLY used for completed series (chapters field is null for ongoing)
-// Winner = highest chapter number among trusted results.
+// ALL sources fire simultaneously. UUID-exact sources are "trusted" (correct series
+// guaranteed). Title-search sources are "untrusted" (used only if all UUID fail).
+// Winner among trusted = highest chapter. Untrusted only used as last resort.
 async function getLatestCh(mdId, title = '', type = '') {
 
-  // ── Phase 1: UUID-based sources — run in parallel, fast & exact ─────────────
-  const [comickUUID, mdAttr, mdAgg, mdFeed] = await Promise.allSettled([
+  const all = await Promise.allSettled([
 
-    // ComicK by MangaDex UUID — most accurate for manhwa/manhua
+    // ── TRUSTED (UUID-exact, can't get wrong series) ─────────────────────────
+
+    // 1. ComicK by MangaDex UUID — very up-to-date, especially for manhwa
     (async () => {
-      const ir = await pFetch(`${COMICK}/comic/${mdId}`, 5000);
+      const ir = await pFetch(`${COMICK}/comic/${mdId}`, 6000);
       if (!ir.ok) return null;
       const info = await ir.json();
       const slug = info?.comic?.slug || info?.slug;
       if (!slug) return null;
-      const cr = await pFetch(`${COMICK}/comic/${slug}/chapters?limit=1&page=1&chap-order=desc`, 5000);
+      const cr = await pFetch(`${COMICK}/comic/${slug}/chapters?limit=1&page=1&chap-order=desc`, 6000);
       if (!cr.ok) return null;
       const cd = await cr.json();
       const n = parseFloat(cd?.chapters?.[0]?.chap);
-      return (!isNaN(n) && n > 0) ? { ch: n, source: 'ComicK' } : null;
+      return (!isNaN(n) && n > 0) ? { ch: n, source: 'ComicK', t: 1 } : null;
     })(),
 
-    // MangaDex lastChapter attribute
+    // 2. MangaDex lastChapter field
     (async () => {
       const d = await mdFetch(`/manga/${mdId}`);
       const n = parseFloat(d.data?.attributes?.lastChapter);
-      return (!isNaN(n) && n > 0) ? { ch: n, source: 'MangaDex' } : null;
+      return (!isNaN(n) && n > 0) ? { ch: n, source: 'MangaDex', t: 1 } : null;
     })(),
 
-    // MangaDex aggregate — all uploaded chapters across all languages
+    // 3. MangaDex aggregate — all languages combined, raw chapters included
     (async () => {
       const d = await mdFetch(`/manga/${mdId}/aggregate`);
       const nums = [];
@@ -949,77 +947,74 @@ async function getLatestCh(mdId, title = '', type = '') {
         for (const ch of Object.values(vol.chapters || {})) {
           const n = parseFloat(ch.chapter); if (!isNaN(n) && n > 0) nums.push(n);
         }
-      return nums.length ? { ch: Math.max(...nums), source: 'MangaDex (agg)' } : null;
+      return nums.length ? { ch: Math.max(...nums), source: 'MangaDex (agg)', t: 1 } : null;
     })(),
 
-    // MangaDex chapter feed — catches scanlation-uploaded chapters
+    // 4. MangaDex feed — latest scanlation-uploaded chapters
     (async () => {
       const d = await mdFetch(`/manga/${mdId}/feed?limit=96&order[chapter]=desc&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic`);
       const nums = (d?.data || []).map(c => parseFloat(c.attributes?.chapter)).filter(n => !isNaN(n) && n > 0);
-      return nums.length ? { ch: Math.max(...nums), source: 'MangaDex (feed)' } : null;
-    })(),
-  ]);
-
-  const uuidResults = [comickUUID, mdAttr, mdAgg, mdFeed]
-    .filter(r => r.status === 'fulfilled' && r.value?.ch > 0)
-    .map(r => r.value);
-
-  // Best from UUID sources — this is our baseline, guaranteed correct series
-  const uuidBest = uuidResults.length
-    ? uuidResults.reduce((a, b) => b.ch > a.ch ? b : a)
-    : null;
-
-  // If UUID sources found something reasonable, trust it and return immediately
-  // (skip slow title-search sources which risk wrong-series matches)
-  if (uuidBest && uuidBest.ch > 0) return uuidBest;
-
-  // ── Phase 2: Title-search fallback (only when UUID sources all failed) ───────
-  // Strict title similarity required (≥0.85) to avoid wrong-series matches.
-  if (!title) return null;
-
-  const [comickSearch, muResult, alResult] = await Promise.allSettled([
-
-    // ComicK title search — strict match only
-    (async () => {
-      const sr = await pFetch(`${COMICK}/v1.0/search?q=${encodeURIComponent(title)}&limit=8`, 5000);
-      if (!sr.ok) return null;
-      const results = await sr.json();
-      const best = (results || []).find(r => titleSim(title, r.title || '') >= 0.85);
-      if (!best?.slug) return null;
-      const cr = await pFetch(`${COMICK}/comic/${best.slug}/chapters?limit=1&page=1&chap-order=desc`, 5000);
-      if (!cr.ok) return null;
-      const cd = await cr.json();
-      const n = parseFloat(cd?.chapters?.[0]?.chap);
-      return (!isNaN(n) && n > 0) ? { ch: n, source: 'ComicK' } : null;
+      return nums.length ? { ch: Math.max(...nums), source: 'MangaDex (feed)', t: 1 } : null;
     })(),
 
-    // MangaUpdates — scanlation release tracking, strict match only
+    // ── UNTRUSTED (title-search, strict similarity required) ─────────────────
+
+    // 5. MangaUpdates — tracks scanlation group releases, best for manhwa
+    //    Uses both direct fetch and CORS proxy fallback
     (async () => {
-      const sr = await dFetch(`${MU}/series/search`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ search: title, perpage: 8 })
+      if (!title) return null;
+      // Try direct CORS first, then proxy
+      let sr = await dFetch(`${MU}/series/search`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ search: title, perpage: 10 })
       }, 6000);
+      if (!sr.ok) {
+        // Try via proxy
+        const proxyUrl = PROXIES[0] + encodeURIComponent(`${MU}/series/search`);
+        sr = await dFetch(proxyUrl, {
+          method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+          body: JSON.stringify({ search: title, perpage: 10 })
+        }, 6000);
+      }
       if (!sr.ok) return null;
       const sd = await sr.json();
-      const best = (sd?.results || []).find(r => titleSim(title, r.record?.title || '') >= 0.85);
+      const ranked = (sd?.results || [])
+        .map(r => ({ r, sim: titleSim(title, r.record?.title || '') }))
+        .filter(x => x.sim >= 0.7).sort((a, b) => b.sim - a.sim);
+      const best = ranked[0]?.r;
       if (!best?.record?.series_id) return null;
-      const rr = await dFetch(`${MU}/releases/search`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ search: '', series_id: best.record.series_id, perpage: 5, asc: false })
+      let rr = await dFetch(`${MU}/releases/search`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ search: '', series_id: best.record.series_id, perpage: 10, asc: false })
       }, 6000);
       if (!rr.ok) return null;
       const rd = await rr.json();
       const chapters = (rd?.results || []).map(r => parseFloat(r.record?.chapter)).filter(n => !isNaN(n) && n > 0);
-      return chapters.length ? { ch: Math.max(...chapters), source: 'MangaUpdates' } : null;
+      return chapters.length ? { ch: Math.max(...chapters), source: 'MangaUpdates', t: 0 } : null;
     })(),
 
-    // AniList — ONLY reliable for COMPLETED series (ongoing = null chapters field)
+    // 6. ComicK title search — strict similarity match
     (async () => {
+      if (!title) return null;
+      const sr = await pFetch(`${COMICK}/v1.0/search?q=${encodeURIComponent(title)}&limit=10`, 6000);
+      if (!sr.ok) return null;
+      const results = await sr.json();
+      const best = (results || [])
+        .map(r => ({ r, sim: titleSim(title, r.title || '') }))
+        .filter(x => x.sim >= 0.7).sort((a, b) => b.sim - a.sim)[0]?.r;
+      if (!best?.slug) return null;
+      const cr = await pFetch(`${COMICK}/comic/${best.slug}/chapters?limit=1&page=1&chap-order=desc`, 6000);
+      if (!cr.ok) return null;
+      const cd = await cr.json();
+      const n = parseFloat(cd?.chapters?.[0]?.chap);
+      return (!isNaN(n) && n > 0) ? { ch: n, source: 'ComicK (search)', t: 0 } : null;
+    })(),
+
+    // 7. AniList — ONLY for FINISHED series (ongoing = null chapters field)
+    (async () => {
+      if (!title) return null;
       const r = await dFetch(ANILIST, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           query: `query($s:String){Media(search:$s,type:MANGA){chapters status title{romaji english}}}`,
           variables: { s: title }
@@ -1028,21 +1023,26 @@ async function getLatestCh(mdId, title = '', type = '') {
       if (!r.ok) return null;
       const d = await r.json();
       const media = d?.data?.Media;
-      // Only trust if completed AND title matches well
       if (media?.status !== 'FINISHED') return null;
       const alTitle = media?.title?.romaji || media?.title?.english || '';
-      if (titleSim(title, alTitle) < 0.75) return null;
+      if (titleSim(title, alTitle) < 0.7) return null;
       const n = parseFloat(media?.chapters);
-      return (!isNaN(n) && n > 0) ? { ch: n, source: 'AniList' } : null;
+      return (!isNaN(n) && n > 0) ? { ch: n, source: 'AniList', t: 0 } : null;
     })(),
   ]);
 
-  const fallbackResults = [comickSearch, muResult, alResult]
+  const results = all
     .filter(r => r.status === 'fulfilled' && r.value?.ch > 0)
     .map(r => r.value);
 
-  if (!fallbackResults.length) return null;
-  return fallbackResults.reduce((a, b) => b.ch > a.ch ? b : a);
+  if (!results.length) return null;
+
+  // Prefer highest among trusted sources
+  const trusted = results.filter(r => r.t === 1);
+  if (trusted.length) return trusted.reduce((a, b) => b.ch > a.ch ? b : a);
+
+  // All UUID sources failed — use best title-search result
+  return results.reduce((a, b) => b.ch > a.ch ? b : a);
 }
 
 // ── CHECK UPDATES — all manga fire in parallel, UI updates as each resolves ──
@@ -1091,32 +1091,16 @@ async function checkAllUpdates() {
 }
 
 // ── ACTIONS ───────────────────────────────────────────────────────────────────
-function setLatest(id) {
-  const m = lib.find(x => x.id === id);
-  if (!m) return;
-  const val = prompt(`Set latest chapter for "${m.title}":`, m.chLatest || '');
-  if (val === null) return;
-  const n = parseFloat(val);
-  if (isNaN(n) || n < 0) { showToast('Invalid chapter number', 'err'); return; }
-  const old = m.chLatest || 0;
-  m.chLatest = n;
-  m.hasNew = n > (m.chRead || 0);
-  if (n > old) {
-    updLog.unshift({ id: uid(), mangaId: m.id, title: m.title, type: m.type, oldCh: old, newCh: n, source: 'Manual', cover: m.cover || '', time: Date.now(), read: false });
-    saveLog();
-  }
-  saveLib(); renderLib();
-  showToast(`Latest chapter set to ${n} ✓`);
-}
-
 function markRead(id) {
   const m = lib.find(x => x.id === id);
   if (!m) return;
-  if ((m.chLatest || 0) > (m.chRead || 0)) {
+  if (m.chLatest > 0 && m.chLatest > (m.chRead || 0)) {
     m.chRead = m.chLatest;
     m.hasNew = false;
     saveLib(); renderLib();
     showToast(`Marked Ch.${m.chLatest} as read ✓`);
+  } else if (!m.chLatest) {
+    showToast('Latest chapter unknown — hit Check Updates first', 'err');
   } else {
     showToast('Already up to date!');
   }
@@ -1164,7 +1148,12 @@ function openEdit(id) {
   document.getElementById('f-type').value = m.type;
   document.getElementById('f-rstatus').value = m.readingStatus;
   document.getElementById('f-chread').value = m.chRead || '';
-  document.getElementById('f-chlatest').value = m.chLatest || '';
+  document.getElementById('f-chlatest').value = m.chLatest || 0;
+  const disp = document.getElementById('f-chlatest-display');
+  if (disp) {
+    disp.textContent = m.chLatest > 0 ? `Ch.${m.chLatest}${m.chSource ? '  ('+m.chSource+')' : ''}` : 'Not fetched yet';
+    disp.style.color = m.chLatest > 0 ? 'var(--accent3)' : 'var(--muted)';
+  }
   document.getElementById('f-mdid').value = m.mdId || '';
   document.getElementById('modal').classList.add('open');
 }
@@ -1176,10 +1165,13 @@ function closeModal() {
 }
 
 function clearForm() {
-  ['f-title','f-chread','f-chlatest','f-mdid','md-search'].forEach(id => {
+  ['f-title','f-chread','f-mdid','md-search'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.value = '';
   });
+  document.getElementById('f-chlatest').value = '0';
+  const disp = document.getElementById('f-chlatest-display');
+  if (disp) { disp.textContent = 'Select a title above to auto-fetch'; disp.style.color = 'var(--muted)'; }
   document.getElementById('f-type').value = 'manga';
   document.getElementById('f-rstatus').value = 'reading';
   const r = document.getElementById('md-results');
@@ -1227,11 +1219,10 @@ async function selectMD(info) {
   document.getElementById('f-title').value = info.title;
   document.getElementById('f-type').value = info.type;
   document.getElementById('f-mdid').value = info.id;
-  // Prefer lastChapter from manga attributes (authoritative MangaDex count) if available
-  if (info.lastCh) {
-    const lc = parseFloat(info.lastCh);
-    if (!isNaN(lc) && lc > 0) document.getElementById('f-chlatest').value = lc;
-  }
+  // Clear latest — never prefill from MangaDex's own lastChapter attr (often stale)
+  document.getElementById('f-chlatest').value = '0';
+  document.getElementById('f-chlatest-display').textContent = 'Fetching…';
+  document.getElementById('f-chlatest-display').style.color = 'var(--muted)';
   document.getElementById('md-results').classList.remove('open');
   document.getElementById('md-search').value = '';
 
@@ -1239,14 +1230,20 @@ async function selectMD(info) {
   try {
     const result = await getLatestCh(info.id, info.title, info.type);
     const ch = result?.ch ?? null;
-    if (ch !== null) {
-      const existing = parseFloat(document.getElementById('f-chlatest').value) || 0;
-      document.getElementById('f-chlatest').value = Math.max(ch, existing) || ch;
-      showToast(`Latest chapter: ${document.getElementById('f-chlatest').value} (${result.source}) ✓`);
+    if (ch !== null && ch > 0) {
+      document.getElementById('f-chlatest').value = ch;
+      document.getElementById('f-chlatest-display').textContent = `Ch.${ch}  (${result.source})`;
+      document.getElementById('f-chlatest-display').style.color = 'var(--accent3)';
+      showToast(`Latest: Ch.${ch} via ${result.source} ✓`);
     } else {
-      showToast('Could not fetch chapter count', 'err');
+      document.getElementById('f-chlatest').value = '0';
+      document.getElementById('f-chlatest-display').textContent = 'Not found — will fetch on Check Updates';
+      showToast('Could not fetch chapter — will retry on Check Updates', 'err');
     }
-  } catch { showToast('Could not fetch chapter', 'err'); }
+  } catch {
+    document.getElementById('f-chlatest-display').textContent = 'Error fetching — will retry on Check Updates';
+    showToast('Could not fetch chapter', 'err');
+  }
 }
 
 async function save() {
@@ -1254,20 +1251,22 @@ async function save() {
   if (!title) { showToast('Title is required!', 'err'); return; }
   const mdId = document.getElementById('f-mdid').value.trim();
   const chRead = parseFloat(document.getElementById('f-chread').value) || 0;
-  const chLatest = parseFloat(document.getElementById('f-chlatest').value) || chRead;
+  // chLatest comes ONLY from the hidden field set by auto-fetch — never from chRead
+  const chLatest = parseFloat(document.getElementById('f-chlatest').value) || 0;
 
   if (editId) {
     const m = lib.find(x => x.id === editId);
     const oldLatest = m.chLatest || 0;
-    Object.assign(m, {
-      title, mdId,
-      type: document.getElementById('f-type').value,
-      readingStatus: document.getElementById('f-rstatus').value,
-      chRead, chLatest
-    });
-    if (chLatest > oldLatest) {
-      m.hasNew = true;
-      updLog.unshift({ id:uid(), mangaId:m.id, title:m.title, type:m.type, oldCh:oldLatest, newCh:chLatest, cover:m.cover||'', time:Date.now(), read:false });
+    m.title = title;
+    m.mdId = mdId;
+    m.type = document.getElementById('f-type').value;
+    m.readingStatus = document.getElementById('f-rstatus').value;
+    m.chRead = chRead;
+    // Only update chLatest if we have a valid auto-fetched value
+    if (chLatest > 0) m.chLatest = Math.max(chLatest, oldLatest);
+    m.hasNew = (m.chLatest || 0) > m.chRead;
+    if ((m.chLatest || 0) > oldLatest) {
+      updLog.unshift({ id:uid(), mangaId:m.id, title:m.title, type:m.type, oldCh:oldLatest, newCh:m.chLatest, cover:m.cover||'', time:Date.now(), read:false });
       saveLog();
     }
     showToast('Saved ✓');
@@ -1285,8 +1284,9 @@ async function save() {
       id: uid(), title, mdId, cover, seriesStatus,
       type: document.getElementById('f-type').value,
       readingStatus: document.getElementById('f-rstatus').value,
-      chRead, chLatest,
-      hasNew: chLatest > chRead,
+      chRead,
+      chLatest,           // 0 if not fetched yet — Check Updates will fill it
+      hasNew: chLatest > chRead && chLatest > 0,
       addedAt: Date.now()
     });
     showToast(`"${title}" added! ✓`);
