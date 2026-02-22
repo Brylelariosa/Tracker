@@ -4,7 +4,7 @@
     <meta name="referrer" content="no-referrer">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>MangaTrack — Real Chapter Updates</title>
+<title>MangaTrack — Real Chapter Updates v13</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;700;900&family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&family=Bebas+Neue&display=swap" rel="stylesheet">
 <style>
 :root {
@@ -192,7 +192,7 @@ header { padding: 28px 0 20px; border-bottom: 1px solid var(--border); display: 
   <header>
     <div>
       <div class="logo-title">MANGA<span>TRACK</span></div>
-      <div class="logo-sub">Live updates via MangaDex · ComicK · MangaUpdates · AniList</div>
+      <div class="logo-sub">MangaDex-primary · ComicK · AniList fallback</div>
     </div>
     <div class="header-right">
       <button class="btn btn-outline" onclick="openImport()">⬆ IMPORT</button>
@@ -260,7 +260,7 @@ header { padding: 28px 0 20px; border-bottom: 1px solid var(--border); display: 
     </div>
     <div class="modal-body">
       <div class="info-note">
-        <strong>How it works:</strong> Search for a title to auto-fill from MangaDex. Latest chapter is fetched automatically from MangaDex, ComicK, and MangaUpdates — never set manually. Hit <strong style="color:var(--accent3)">Check Updates</strong> anytime to refresh all.
+        <strong>How it works:</strong> Search for a title to auto-fill from MangaDex. Latest chapter is fetched directly from MangaDex (feed + aggregate, all languages) — the highest number wins. ComicK and AniList are used as fallback. Hit <strong style="color:var(--accent3)">Check Updates</strong> anytime to refresh all.
       </div>
 
       <div class="form-group" id="search-section">
@@ -909,16 +909,52 @@ function titleSim(a, b) {
 }
 
 // ── GET LATEST CHAPTER ────────────────────────────────────────────────────────
-// ALL sources fire simultaneously. UUID-exact sources are "trusted" (correct series
-// guaranteed). Title-search sources are "untrusted" (used only if all UUID fail).
-// Winner among trusted = highest chapter. Untrusted only used as last resort.
+// MangaDex is the PRIMARY and most reliable source. We query it via multiple
+// endpoints (feed + aggregate) to get the true highest chapter across ALL
+// languages/translations. ComicK (UUID-based) is secondary. Title-search
+// sources (MangaUpdates, AniList) are last-resort only.
 async function getLatestCh(mdId, title = '', type = '') {
 
   const all = await Promise.allSettled([
 
     // ── TRUSTED (UUID-exact, can't get wrong series) ─────────────────────────
 
-    // 1. ComicK by MangaDex UUID — very up-to-date, especially for manhwa
+    // 1. MangaDex feed — paginated, ALL languages, ALL content ratings
+    //    This is the ground truth: actual uploaded chapters on MangaDex.
+    //    We fetch multiple pages to find the absolute highest chapter number.
+    (async () => {
+      // First page (sorted desc) gives the newest chapters
+      const url = `/manga/${mdId}/feed?limit=500&offset=0&order[chapter]=desc` +
+        `&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic` +
+        `&includes[]=scanlation_group`;
+      const d = await mdFetch(url);
+      const nums = (d?.data || []).map(c => parseFloat(c.attributes?.chapter)).filter(n => !isNaN(n) && n > 0);
+      if (!nums.length) return null;
+      // Also check total — if more pages exist, fetch p2 to be safe
+      const total = d?.total || 0;
+      if (total > 500) {
+        try {
+          const d2 = await mdFetch(`/manga/${mdId}/feed?limit=500&offset=500&order[chapter]=desc` +
+            `&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic`);
+          const n2 = (d2?.data || []).map(c => parseFloat(c.attributes?.chapter)).filter(n => !isNaN(n) && n > 0);
+          nums.push(...n2);
+        } catch {}
+      }
+      return { ch: Math.max(...nums), source: 'MangaDex', t: 1 };
+    })(),
+
+    // 2. MangaDex aggregate — reliable chapter list per volume/chapter grouping
+    (async () => {
+      const d = await mdFetch(`/manga/${mdId}/aggregate`);
+      const nums = [];
+      for (const vol of Object.values(d.volumes || {}))
+        for (const ch of Object.values(vol.chapters || {})) {
+          const n = parseFloat(ch.chapter); if (!isNaN(n) && n > 0) nums.push(n);
+        }
+      return nums.length ? { ch: Math.max(...nums), source: 'MangaDex (agg)', t: 1 } : null;
+    })(),
+
+    // 3. ComicK by MangaDex UUID — very up-to-date, especially for manhwa/manhua
     (async () => {
       const ir = await pFetch(`${COMICK}/comic/${mdId}`, 6000);
       if (!ir.ok) return null;
@@ -932,68 +968,16 @@ async function getLatestCh(mdId, title = '', type = '') {
       return (!isNaN(n) && n > 0) ? { ch: n, source: 'ComicK', t: 1 } : null;
     })(),
 
-    // 2. MangaDex lastChapter field
+    // 4. MangaDex lastChapter field — LAST resort among trusted (often stale)
     (async () => {
       const d = await mdFetch(`/manga/${mdId}`);
       const n = parseFloat(d.data?.attributes?.lastChapter);
-      return (!isNaN(n) && n > 0) ? { ch: n, source: 'MangaDex', t: 1 } : null;
-    })(),
-
-    // 3. MangaDex aggregate — all languages combined, raw chapters included
-    (async () => {
-      const d = await mdFetch(`/manga/${mdId}/aggregate`);
-      const nums = [];
-      for (const vol of Object.values(d.volumes || {}))
-        for (const ch of Object.values(vol.chapters || {})) {
-          const n = parseFloat(ch.chapter); if (!isNaN(n) && n > 0) nums.push(n);
-        }
-      return nums.length ? { ch: Math.max(...nums), source: 'MangaDex (agg)', t: 1 } : null;
-    })(),
-
-    // 4. MangaDex feed — latest scanlation-uploaded chapters
-    (async () => {
-      const d = await mdFetch(`/manga/${mdId}/feed?limit=96&order[chapter]=desc&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic`);
-      const nums = (d?.data || []).map(c => parseFloat(c.attributes?.chapter)).filter(n => !isNaN(n) && n > 0);
-      return nums.length ? { ch: Math.max(...nums), source: 'MangaDex (feed)', t: 1 } : null;
+      return (!isNaN(n) && n > 0) ? { ch: n, source: 'MangaDex (meta)', t: 1 } : null;
     })(),
 
     // ── UNTRUSTED (title-search, strict similarity required) ─────────────────
 
-    // 5. MangaUpdates — tracks scanlation group releases, best for manhwa
-    //    Uses both direct fetch and CORS proxy fallback
-    (async () => {
-      if (!title) return null;
-      // Try direct CORS first, then proxy
-      let sr = await dFetch(`${MU}/series/search`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ search: title, perpage: 10 })
-      }, 6000);
-      if (!sr.ok) {
-        // Try via proxy
-        const proxyUrl = PROXIES[0] + encodeURIComponent(`${MU}/series/search`);
-        sr = await dFetch(proxyUrl, {
-          method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-          body: JSON.stringify({ search: title, perpage: 10 })
-        }, 6000);
-      }
-      if (!sr.ok) return null;
-      const sd = await sr.json();
-      const ranked = (sd?.results || [])
-        .map(r => ({ r, sim: titleSim(title, r.record?.title || '') }))
-        .filter(x => x.sim >= 0.7).sort((a, b) => b.sim - a.sim);
-      const best = ranked[0]?.r;
-      if (!best?.record?.series_id) return null;
-      let rr = await dFetch(`${MU}/releases/search`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ search: '', series_id: best.record.series_id, perpage: 10, asc: false })
-      }, 6000);
-      if (!rr.ok) return null;
-      const rd = await rr.json();
-      const chapters = (rd?.results || []).map(r => parseFloat(r.record?.chapter)).filter(n => !isNaN(n) && n > 0);
-      return chapters.length ? { ch: Math.max(...chapters), source: 'MangaUpdates', t: 0 } : null;
-    })(),
-
-    // 6. ComicK title search — strict similarity match
+    // 5. ComicK title search — strict similarity match (fallback only)
     (async () => {
       if (!title) return null;
       const sr = await pFetch(`${COMICK}/v1.0/search?q=${encodeURIComponent(title)}&limit=10`, 6000);
@@ -1010,7 +994,7 @@ async function getLatestCh(mdId, title = '', type = '') {
       return (!isNaN(n) && n > 0) ? { ch: n, source: 'ComicK (search)', t: 0 } : null;
     })(),
 
-    // 7. AniList — ONLY for FINISHED series (ongoing = null chapters field)
+    // 6. AniList — ONLY for FINISHED series (ongoing = null chapters field)
     (async () => {
       if (!title) return null;
       const r = await dFetch(ANILIST, {
@@ -1037,7 +1021,7 @@ async function getLatestCh(mdId, title = '', type = '') {
 
   if (!results.length) return null;
 
-  // Prefer highest among trusted sources
+  // Among trusted UUID-exact sources, take the HIGHEST (not just any one)
   const trusted = results.filter(r => r.t === 1);
   if (trusted.length) return trusted.reduce((a, b) => b.ch > a.ch ? b : a);
 
@@ -1059,7 +1043,7 @@ async function checkAllUpdates() {
   let found = 0, done = 0;
   const total = tracked.length;
 
-  showToast(`Checking ${total} manga via 8 APIs…`);
+  showToast(`Checking ${total} manga via MangaDex…`);
 
   // Fire ALL simultaneously — each card updates the instant its fetch completes
   await Promise.allSettled(tracked.map(async (m) => {
