@@ -164,6 +164,9 @@ header { padding: 28px 0 20px; border-bottom: 1px solid var(--border); display: 
 @media(max-width:600px){.logo-title{font-size:30px}.stats{gap:16px}.form-row{grid-template-columns:1fr}.grid{grid-template-columns:1fr 1fr}}
 @media(max-width:400px){.grid{grid-template-columns:1fr}}
 </style>
+<!-- CSS_ADSBLOCK_START -->
+<link rel="stylesheet" href="https://adblockers.opera-mini.net/css_block/default-domainless.css" type="text/css" />
+<!-- CSS_ADSBLOCK_END -->
 </head>
 <body>
 <div class="wrap">
@@ -327,16 +330,23 @@ async function searchMD(title) {
 }
 
 async function getLatestCh(mdId) {
-  // Try English first, then fall back to any language
+  // Strategy 1: English chapters with a generous limit to catch the true latest
   try {
-    const d = await mdFetch(`/manga/${mdId}/feed?order[chapter]=desc&limit=5&translatedLanguage[]=en`);
-    const chs = (d.data || []).map(c => parseFloat(c.attributes.chapter)).filter(n => !isNaN(n));
+    const d = await mdFetch(`/manga/${mdId}/feed?order[chapter]=desc&limit=96&translatedLanguage[]=en`);
+    const chs = (d.data || []).map(c => parseFloat(c.attributes.chapter)).filter(n => !isNaN(n) && n > 0);
     if (chs.length) return Math.max(...chs);
   } catch {}
+  // Strategy 2: Any language with a generous limit
   try {
-    const d = await mdFetch(`/manga/${mdId}/feed?order[chapter]=desc&limit=5`);
-    const chs = (d.data || []).map(c => parseFloat(c.attributes.chapter)).filter(n => !isNaN(n));
+    const d = await mdFetch(`/manga/${mdId}/feed?order[chapter]=desc&limit=96`);
+    const chs = (d.data || []).map(c => parseFloat(c.attributes.chapter)).filter(n => !isNaN(n) && n > 0);
     if (chs.length) return Math.max(...chs);
+  } catch {}
+  // Strategy 3: Fallback to the manga's own lastChapter attribute (most reliable for chapter count)
+  try {
+    const d = await mdFetch(`/manga/${mdId}`);
+    const last = parseFloat(d.data?.attributes?.lastChapter);
+    if (!isNaN(last) && last > 0) return last;
   } catch {}
   return null;
 }
@@ -475,7 +485,7 @@ async function checkAllUpdates() {
 
   for (const m of tracked) {
     try {
-      const latest = await getLatestCh(m.mdId);
+      let latest = await getLatestCh(m.mdId);
       if (latest === null) { errors++; continue; }
 
       if (latest > (m.chLatest || 0)) {
@@ -629,7 +639,11 @@ async function selectMD(info) {
   document.getElementById('f-title').value = info.title;
   document.getElementById('f-type').value = info.type;
   document.getElementById('f-mdid').value = info.id;
-  if (info.lastCh) document.getElementById('f-chlatest').value = info.lastCh;
+  // Prefer lastChapter from manga attributes (authoritative MangaDex count) if available
+  if (info.lastCh) {
+    const lc = parseFloat(info.lastCh);
+    if (!isNaN(lc) && lc > 0) document.getElementById('f-chlatest').value = lc;
+  }
   document.getElementById('md-results').classList.remove('open');
   document.getElementById('md-search').value = '';
 
@@ -637,8 +651,10 @@ async function selectMD(info) {
   try {
     const ch = await getLatestCh(info.id);
     if (ch !== null) {
-      document.getElementById('f-chlatest').value = ch;
-      showToast(`Latest chapter: ${ch} ✓`);
+      // Use whichever is higher: feed-based or lastChapter attribute
+      const existing = parseFloat(document.getElementById('f-chlatest').value) || 0;
+      document.getElementById('f-chlatest').value = Math.max(ch, existing) || ch;
+      showToast(`Latest chapter: ${document.getElementById('f-chlatest').value} ✓`);
     } else {
       showToast('Could not fetch chapter count', 'err');
     }
