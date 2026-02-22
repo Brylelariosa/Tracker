@@ -311,6 +311,11 @@ header { padding: 28px 0 20px; border-bottom: 1px solid var(--border); display: 
         <label class="form-label">MangaDex ID <span style="color:var(--muted);font-size:8px">(auto from search — required for live updates)</span></label>
         <input class="form-input" id="f-mdid" placeholder="e.g. a1c7c817-4e59-43b7-9365-09675a149a6f">
       </div>
+      <div class="form-group">
+        <label class="form-label">Custom Source URL <span style="color:var(--accent2);font-size:8px">optional — for chapters not on MangaDex</span></label>
+        <input class="form-input" id="f-customurl" placeholder="e.g. https://rinkocomics.com/comic/job-change-log/">
+        <div style="font-size:9px;color:var(--muted);margin-top:4px;letter-spacing:.5px">Paste the manga's chapter list page. The tracker will scrape the highest chapter number from it.</div>
+      </div>
     </div>
     <div class="modal-ft">
       <button class="btn btn-outline" onclick="closeModal()">Cancel</button>
@@ -966,13 +971,33 @@ function titleSim(a, b) {
 // endpoints (feed + aggregate) to get the true highest chapter across ALL
 // languages/translations. ComicK (UUID-based) is secondary. Title-search
 // sources (MangaUpdates, AniList) are last-resort only.
-async function getLatestCh(mdId, title = '', type = '') {
+async function getLatestCh(mdId, title = '', type = '', customUrl = '') {
 
   const all = await Promise.allSettled([
 
-    // ── TRUSTED (UUID-exact, can't get wrong series) ─────────────────────────
-
-    // 1. MangaDex feed — paginated, ALL languages, ALL content ratings
+    // 0. Custom URL — user-specified page, scrape highest chapter number from it
+    (async () => {
+      if (!customUrl) return null;
+      const res = await raceFetch(customUrl, 8000);
+      if (!res) return null;
+      const html = await res.text();
+      // Try multiple patterns: "Chapter 51", "Chapters 51", "Ch. 51", "51 chapters"
+      const patterns = [
+        /chapter[s]?\s+(\d+)/i,
+        /ch\.\s*(\d+)/i,
+        /(\d+)\s+chapter/i,
+        /"chapter"\s*:\s*"?(\d+)/i,
+      ];
+      for (const p of patterns) {
+        const m = html.match(p);
+        if (m) { const n = parseInt(m[1]); if (n > 0) return { ch: n, source: 'Custom URL', t: 1 }; }
+      }
+      // Last resort: find all standalone numbers and take the highest reasonable one
+      const nums = [...html.matchAll(/\b(\d{1,4})\b/g)]
+        .map(m => parseInt(m[1]))
+        .filter(n => n > 0 && n < 9999);
+      return null; // don't guess from random numbers
+    })(),
     //    This is the ground truth: actual uploaded chapters on MangaDex.
     //    We fetch multiple pages to find the absolute highest chapter number.
     (async () => {
@@ -1117,7 +1142,7 @@ async function checkAllUpdates() {
   // Fire ALL simultaneously — each card updates the instant its fetch completes
   await Promise.allSettled(tracked.map(async (m) => {
     try {
-      const r = await getLatestCh(m.mdId, m.title, m.type);
+      const r = await getLatestCh(m.mdId, m.title, m.type, m.customUrl || '');
       if (r && r.ch > 0) {
         m.chSource = r.source;
         if (r.ch > (m.chLatest || 0)) {
@@ -1208,6 +1233,7 @@ function openEdit(id) {
     disp.style.color = m.chLatest > 0 ? 'var(--accent3)' : 'var(--muted)';
   }
   document.getElementById('f-mdid').value = m.mdId || '';
+  document.getElementById('f-customurl').value = m.customUrl || '';
   document.getElementById('modal').classList.add('open');
 }
 
@@ -1218,7 +1244,7 @@ function closeModal() {
 }
 
 function clearForm() {
-  ['f-title','f-chread','f-mdid','md-search'].forEach(id => {
+  ['f-title','f-chread','f-mdid','f-customurl','md-search'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.value = '';
   });
@@ -1281,7 +1307,7 @@ async function selectMD(info) {
 
   showToast('Fetching latest chapter…');
   try {
-    const result = await getLatestCh(info.id, info.title, info.type);
+    const result = await getLatestCh(info.id, info.title, info.type, '');
     const ch = result?.ch ?? null;
     if (ch !== null && ch > 0) {
       document.getElementById('f-chlatest').value = ch;
@@ -1303,6 +1329,7 @@ async function save() {
   const title = document.getElementById('f-title').value.trim();
   if (!title) { showToast('Title is required!', 'err'); return; }
   const mdId = document.getElementById('f-mdid').value.trim();
+  const customUrl = document.getElementById('f-customurl').value.trim();
   const chRead = parseFloat(document.getElementById('f-chread').value) || 0;
   // chLatest comes ONLY from the hidden field set by auto-fetch — never from chRead
   const chLatest = parseFloat(document.getElementById('f-chlatest').value) || 0;
@@ -1312,6 +1339,7 @@ async function save() {
     const oldLatest = m.chLatest || 0;
     m.title = title;
     m.mdId = mdId;
+    m.customUrl = customUrl;
     m.type = document.getElementById('f-type').value;
     m.readingStatus = document.getElementById('f-rstatus').value;
     m.chRead = chRead;
@@ -1334,7 +1362,7 @@ async function save() {
       } catch {}
     }
     lib.push({
-      id: uid(), title, mdId, cover, seriesStatus,
+      id: uid(), title, mdId, customUrl, cover, seriesStatus,
       type: document.getElementById('f-type').value,
       readingStatus: document.getElementById('f-rstatus').value,
       chRead,
@@ -1354,7 +1382,7 @@ async function refreshOne(id) {
   if (!m) return;
   showToast(`Refreshing ${m.title}…`);
   try {
-    const r = await getLatestCh(m.mdId, m.title, m.type);
+    const r = await getLatestCh(m.mdId, m.title, m.type, m.customUrl || '');
     if (r && r.ch > 0) {
       const old = m.chLatest || 0;
       m.chSource = r.source;
@@ -1385,8 +1413,8 @@ async function debugSources(id) {
   document.getElementById('debug-title').textContent = shortTitle;
   modal.classList.add('open');
 
-  const srcKeys = ['md-feed','md-agg','md-meta','comick','rinko'];
-  const srcLabels = { 'md-feed':'MangaDex Feed', 'md-agg':'MangaDex Aggregate', 'md-meta':'MangaDex Meta', 'comick':'ComicK', 'rinko':'Rinko Comics' };
+  const srcKeys = ['custom','md-feed','md-agg','md-meta','comick','rinko'];
+  const srcLabels = { 'custom':'Custom URL', 'md-feed':'MangaDex Feed', 'md-agg':'MangaDex Aggregate', 'md-meta':'MangaDex Meta', 'comick':'ComicK', 'rinko':'Rinko Comics' };
 
   body.innerHTML = `
     <div style="font-size:9px;color:var(--muted);letter-spacing:.5px;line-height:2;padding:4px 2px">
@@ -1426,7 +1454,25 @@ async function debugSources(id) {
     }
   }
 
-  // Each source fires independently and updates its row immediately
+  // Custom URL
+  if (m.customUrl) {
+    raceFetch(m.customUrl).then(async res => {
+      try {
+        const html = await res.text();
+        const patterns = [/chapter[s]?\s+(\d+)/i, /ch\.\s*(\d+)/i, /(\d+)\s+chapter/i];
+        for (const p of patterns) {
+          const match = html.match(p);
+          if (match) { update('custom', parseInt(match[1])); return; }
+        }
+        update('custom', 0);
+      } catch { update('custom', 0); }
+    }).catch(() => update('custom', 0));
+  } else {
+    const row = document.getElementById('dbg-custom');
+    const val = document.getElementById('dbg-val-custom');
+    if (row && val) { row.style.opacity = '.3'; val.textContent = 'not set'; }
+  }
+
   raceFetch(MD + `/manga/${m.mdId}/feed?limit=500&order[chapter]=desc&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic`).then(async res => {
     try {
       const d = await res.json();
