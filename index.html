@@ -436,79 +436,75 @@ async function searchMD(title) {
   return d.data || [];
 }
 
-async function getLatestCh(mdId, title = '') {
-  // ── MangaDex: aggregate (all languages) ─────────────────────────────────
-  const mdAggregate = (async () => {
+async function getLatestCh(mdId, title = '', type = '') {
+  const isManhwa = type === 'manhwa';
+  const isManga  = type === 'manga';
+
+  // ── Helper: proxied fetch ────────────────────────────────────────────────
+  const pFetch = (url, opts = {}) => fetch(PROXY + encodeURIComponent(url), { headers: { 'X-Requested-With': 'XMLHttpRequest' }, ...opts });
+
+  // ── MangaDex aggregate (all languages, deduplicates per chapter number) ──
+  const mdAgg = (async () => {
     try {
       const d = await mdFetch(`/manga/${mdId}/aggregate`);
-      const chNums = [];
+      const nums = [];
       for (const vol of Object.values(d.volumes || {}))
         for (const ch of Object.values(vol.chapters || {})) {
-          const n = parseFloat(ch.chapter);
-          if (!isNaN(n) && n > 0) chNums.push(n);
+          const n = parseFloat(ch.chapter); if (!isNaN(n) && n > 0) nums.push(n);
         }
-      if (chNums.length) return Math.max(...chNums);
+      if (nums.length) return Math.max(...nums);
     } catch {}
     return null;
   })();
 
-  // ── MangaDex: feed endpoint ──────────────────────────────────────────────
+  // ── MangaDex feed (top 96 desc) ─────────────────────────────────────────
   const mdFeed = (async () => {
     try {
-      const path = `/manga/${mdId}/feed?limit=96&order[chapter]=desc&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic`;
-      const d = await mdFetch(path);
-      const chNums = (d.data || [])
-        .map(c => parseFloat(c.attributes?.chapter))
-        .filter(n => !isNaN(n) && n > 0);
-      if (chNums.length) return Math.max(...chNums);
+      const d = await mdFetch(`/manga/${mdId}/feed?limit=96&order[chapter]=desc&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic`);
+      const nums = (d.data || []).map(c => parseFloat(c.attributes?.chapter)).filter(n => !isNaN(n) && n > 0);
+      if (nums.length) return Math.max(...nums);
     } catch {}
     return null;
   })();
 
-  // ── MangaDex: lastChapter attribute ─────────────────────────────────────
+  // ── MangaDex lastChapter attribute ──────────────────────────────────────
   const mdAttr = (async () => {
     try {
       const d = await mdFetch(`/manga/${mdId}`);
-      const last = parseFloat(d.data?.attributes?.lastChapter);
-      if (!isNaN(last) && last > 0) return last;
+      const n = parseFloat(d.data?.attributes?.lastChapter);
+      if (!isNaN(n) && n > 0) return n;
     } catch {}
     return null;
   })();
 
-  // ── ComicK: search by MangaDex UUID (their API supports this) ───────────
-  const comickLatest = (async () => {
+  // ── ComicK (by MangaDex UUID — ComicK natively indexes by MD ID) ────────
+  const comick = (async () => {
     try {
-      // ComicK supports lookup by MangaDex UUID via their /comic endpoint
-      const infoUrl = PROXY + encodeURIComponent(`${COMICK}/comic/${mdId}`);
-      const ir = await fetch(infoUrl, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+      const ir = await pFetch(`${COMICK}/comic/${mdId}`);
       if (ir.ok) {
         const info = await ir.json();
         const slug = info?.comic?.slug || info?.slug;
         if (slug) {
-          // Get chapters sorted desc, no lang filter to catch all scanlations
-          const chapUrl = PROXY + encodeURIComponent(`${COMICK}/comic/${slug}/chapters?limit=1&page=1&chap-order=desc`);
-          const cr = await fetch(chapUrl, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+          const cr = await pFetch(`${COMICK}/comic/${slug}/chapters?limit=1&page=1&chap-order=desc`);
           if (cr.ok) {
-            const chapData = await cr.json();
-            const chap = parseFloat(chapData?.chapters?.[0]?.chap);
-            if (!isNaN(chap) && chap > 0) return chap;
+            const cd = await cr.json();
+            const n = parseFloat(cd?.chapters?.[0]?.chap);
+            if (!isNaN(n) && n > 0) return n;
           }
         }
       }
-      // Fallback: search ComicK by title
+      // fallback: title search on ComicK
       if (title) {
-        const sq = PROXY + encodeURIComponent(`${COMICK}/v1.0/search?q=${encodeURIComponent(title)}&limit=5`);
-        const sr = await fetch(sq, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+        const sr = await pFetch(`${COMICK}/v1.0/search?q=${encodeURIComponent(title)}&limit=3`);
         if (sr.ok) {
-          const results = await sr.json();
-          const slug = results?.[0]?.slug;
+          const res = await sr.json();
+          const slug = res?.[0]?.slug;
           if (slug) {
-            const chapUrl = PROXY + encodeURIComponent(`${COMICK}/comic/${slug}/chapters?limit=1&page=1&chap-order=desc`);
-            const cr = await fetch(chapUrl, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+            const cr = await pFetch(`${COMICK}/comic/${slug}/chapters?limit=1&page=1&chap-order=desc`);
             if (cr.ok) {
-              const chapData = await cr.json();
-              const chap = parseFloat(chapData?.chapters?.[0]?.chap);
-              if (!isNaN(chap) && chap > 0) return chap;
+              const cd = await cr.json();
+              const n = parseFloat(cd?.chapters?.[0]?.chap);
+              if (!isNaN(n) && n > 0) return n;
             }
           }
         }
@@ -517,82 +513,88 @@ async function getLatestCh(mdId, title = '') {
     return null;
   })();
 
-  // ── MangaTown scrape: reliable third-party aggregator ───────────────────
-  const mangaTownLatest = (async () => {
-    if (!title) return null;
+  // ── Toonily (manhwa-specific, one of the biggest manhwa aggregators) ─────
+  const toonily = (async () => {
+    if (!title || isManga) return null;
     try {
-      // Build slug: lowercase, spaces → underscores, strip special chars
-      const slug = title.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim().replace(/\s+/g, '_');
-      const url = PROXY + encodeURIComponent(`https://www.mangatown.com/manga/${slug}/`);
-      const res = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
-      if (!res.ok) return null;
-      const html = await res.text();
-      // Chapter list items look like: <li><a href=".../c063/">Chapter 63</a>
-      const matches = [...html.matchAll(/Chapter\s+([\d.]+)/gi)];
+      const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      const r = await pFetch(`https://toonily.com/webtoon/${slug}/`);
+      if (!r.ok) return null;
+      const html = await r.text();
+      const matches = [...html.matchAll(/chapter[- ]([\d]+(?:[.-][\d]+)?)/gi)];
       const nums = matches.map(m => parseFloat(m[1])).filter(n => !isNaN(n) && n > 0);
       if (nums.length) return Math.max(...nums);
     } catch {}
     return null;
   })();
 
-  // ── Bato.to: another reliable aggregator with a search API ──────────────
-  const batoLatest = (async () => {
+  // ── MangaFire (strong manhwa + manga coverage) ───────────────────────────
+  const mangafire = (async () => {
     if (!title) return null;
     try {
-      const searchUrl = PROXY + encodeURIComponent(`https://bato.to/search?word=${encodeURIComponent(title)}&lang=en`);
-      const res = await fetch(searchUrl, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
-      if (!res.ok) return null;
-      const html = await res.text();
-      // Find first series link
-      const seriesMatch = html.match(/href="(\/title\/\d+[^"]+)"/);
-      if (!seriesMatch) return null;
-      const seriesUrl = PROXY + encodeURIComponent('https://bato.to' + seriesMatch[1]);
-      const sr = await fetch(seriesUrl, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+      const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      // MangaFire search API
+      const sr = await pFetch(`https://mangafire.to/ajax/search?keyword=${encodeURIComponent(title)}`);
       if (!sr.ok) return null;
-      const shtml = await sr.text();
-      const cmatches = [...shtml.matchAll(/ch[._-]?([\d]+(?:\.\d+)?)/gi)];
+      const sd = await sr.json();
+      const html = sd?.result || sd?.html || '';
+      const linkMatch = html.match(/href="\/manga\/([^"]+)"/);
+      if (!linkMatch) return null;
+      const mangaSlug = linkMatch[1];
+      const mr = await pFetch(`https://mangafire.to/manga/${mangaSlug}`);
+      if (!mr.ok) return null;
+      const mhtml = await mr.text();
+      const cmatches = [...mhtml.matchAll(/Chapter\s+([\d]+(?:[.\-][\d]+)?)/gi)];
       const nums = cmatches.map(m => parseFloat(m[1])).filter(n => !isNaN(n) && n > 0);
       if (nums.length) return Math.max(...nums);
     } catch {}
     return null;
   })();
 
-  // ── MangaPlus: official source for WSJ titles (JJK, One Piece, etc.) ───
-  const mangaPlusLatest = (async () => {
-    if (!title) return null;
+  // ── MangaPlus (official WSJ — JJK, One Piece, etc.) ─────────────────────
+  const mangaplus = (async () => {
+    if (!title || isManhwa) return null;
     try {
-      // MangaPlus has a title search API
-      const enc = encodeURIComponent(title);
-      const url = PROXY + encodeURIComponent(`https://jumpg-webapi.tokyo-cdn.com/api/title_list/all`);
-      const res = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest', 'User-Agent': 'Mozilla/5.0' } });
-      if (!res.ok) return null;
-      const data = await res.json();
-      const titleList = data?.success?.allTitlesView?.titles || [];
+      const r = await pFetch(`https://jumpg-webapi.tokyo-cdn.com/api/title_list/all`);
+      if (!r.ok) return null;
+      const data = await r.json();
       const norm = title.toLowerCase().replace(/[^a-z0-9]/g, '');
-      const match = titleList.find(t => {
+      const match = (data?.success?.allTitlesView?.titles || []).find(t => {
         const tn = (t.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
         return tn === norm || tn.includes(norm) || norm.includes(tn);
       });
       if (!match) return null;
-      // Fetch individual title details for chapter count
-      const detailUrl = PROXY + encodeURIComponent(`https://jumpg-webapi.tokyo-cdn.com/api/title_detailV3?title_id=${match.titleId}`);
-      const dr = await fetch(detailUrl, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+      const dr = await pFetch(`https://jumpg-webapi.tokyo-cdn.com/api/title_detailV3?title_id=${match.titleId}`);
       if (!dr.ok) return null;
       const detail = await dr.json();
-      const chapters = detail?.success?.titleDetailView?.chapterListGroup || [];
-      const chNums = chapters.flatMap(g => [...(g.firstChapterList||[]), ...(g.lastChapterList||[])])
+      const groups = detail?.success?.titleDetailView?.chapterListGroup || [];
+      const nums = groups.flatMap(g => [...(g.firstChapterList||[]), ...(g.lastChapterList||[])])
         .map(c => parseFloat(c.name?.replace(/[^0-9.]/g,'')))
         .filter(n => !isNaN(n) && n > 0);
-      if (chNums.length) return Math.max(...chNums);
+      if (nums.length) return Math.max(...nums);
     } catch {}
     return null;
   })();
 
-  // Run all in parallel, return the highest value found across all sources
-  const results = await Promise.all([mdAggregate, mdFeed, mdAttr, comickLatest, mangaTownLatest, batoLatest, mangaPlusLatest]);
-  const valid = results.filter(v => v !== null && v > 0);
-  if (valid.length) return Math.max(...valid);
-  return null;
+  // ── MangaUpdates RSS (title search for precise latest chapter) ───────────
+  const muLatest = (async () => {
+    if (!title) return null;
+    try {
+      const r = await pFetch(`https://www.mangaupdates.com/series.html?search=${encodeURIComponent(title)}&display=list`);
+      if (!r.ok) return null;
+      const html = await r.text();
+      // Latest release listed on the series page usually has chapter number
+      const matches = [...html.matchAll(/c\.?\s*([\d]+(?:\.[\d]+)?)/gi)];
+      const nums = matches.map(m => parseFloat(m[1])).filter(n => !isNaN(n) && n > 0 && n < 5000);
+      if (nums.length) return Math.max(...nums);
+    } catch {}
+    return null;
+  })();
+
+  // Run all strategies in parallel, return highest value across all sources
+  const all = await Promise.all([mdAgg, mdFeed, mdAttr, comick, toonily, mangafire, mangaplus, muLatest]);
+  const valid = all.filter(v => v !== null && v > 0);
+  return valid.length ? Math.max(...valid) : null;
 }
 
 // ── IMPORT / EXPORT ───────────────────────────────────────────────────────────
@@ -672,50 +674,64 @@ async function doImport() {
   prog.style.display = 'block';
   document.getElementById('do-import-btn').disabled = true;
 
-  let added = 0;
-  for (let i = 0; i < toAdd.length; i++) {
-    const item = toAdd[i];
-    prog.textContent = `IMPORTING ${i+1}/${toAdd.length}: ${item.title}…`;
+  // Split: items with full data (from JSON export) vs items needing lookup (from paste/CSV)
+  const fullItems = toAdd.filter(i => i.mdId && i.chLatest);
+  const lookupItems = toAdd.filter(i => !i.mdId || !i.chLatest);
 
-    try {
-      // Search MangaDex for the title
-      const results = await searchMD(item.title);
-      const match = results[0];
-      if (match) {
-        const title = match.attributes.title.en || Object.values(match.attributes.title)[0] || item.title;
-        const mdId = match.id;
-        const type = mdType(match);
-        const status = match.attributes.status || 'ongoing';
-        // Fetch cover
-        let cover = '';
-        try {
-          const d = await mdFetch(`/manga/${mdId}?includes[]=cover_art`);
-          cover = coverUrl(d.data) || '';
-        } catch {}
-        const chLatest = await getLatestCh(mdId, title);
-        lib.push({
-          id: uid(), title, mdId, cover,
-          seriesStatus: status, type,
-          readingStatus: item.readingStatus || 'reading',
-          chRead: item.chRead || 0,
-          chLatest: chLatest || item.chLatest || item.chRead || 0,
-          hasNew: (chLatest || 0) > (item.chRead || 0),
-          addedAt: Date.now()
-        });
-      } else {
-        // Add without MangaDex data
-        lib.push({
-          id: uid(), title: item.title, mdId: '', cover: '',
-          seriesStatus: 'ongoing', type: item.type || 'manga',
-          readingStatus: item.readingStatus || 'reading',
-          chRead: item.chRead || 0, chLatest: item.chLatest || item.chRead || 0,
-          hasNew: false, addedAt: Date.now()
-        });
-      }
+  let added = 0;
+
+  // ── Fast path: JSON items with mdId+chLatest already — add instantly ────
+  if (fullItems.length) {
+    prog.textContent = `Adding ${fullItems.length} items instantly…`;
+    for (const item of fullItems) {
+      lib.push({
+        id: uid(),
+        title: item.title, mdId: item.mdId || '', cover: item.cover || '',
+        seriesStatus: item.seriesStatus || 'ongoing',
+        type: item.type || 'manga',
+        readingStatus: item.readingStatus || 'reading',
+        chRead: item.chRead || 0, chLatest: item.chLatest || 0,
+        hasNew: (item.chLatest || 0) > (item.chRead || 0),
+        addedAt: Date.now()
+      });
       added++;
-      saveLib();
-    } catch(e) {}
-    await sleep(500);
+    }
+    saveLib();
+    renderLib();
+    prog.textContent = `✓ Added ${fullItems.length} from file instantly.`;
+  }
+
+  // ── Slow path: items needing MangaDex lookup — batch 3 at a time ────────
+  if (lookupItems.length) {
+    const BATCH = 3;
+    for (let i = 0; i < lookupItems.length; i += BATCH) {
+      const batch = lookupItems.slice(i, i + BATCH);
+      prog.textContent = `Looking up ${i+1}–${Math.min(i+BATCH, lookupItems.length)} of ${lookupItems.length}…`;
+      await Promise.all(batch.map(async (item) => {
+        try {
+          const results = await searchMD(item.title);
+          const match = results[0];
+          if (match) {
+            const title = match.attributes.title.en || Object.values(match.attributes.title)[0] || item.title;
+            const mdId = match.id;
+            const type = item.type || mdType(match);
+            const seriesStatus = match.attributes.status || 'ongoing';
+            let cover = coverUrl(match) || '';
+            if (!cover) {
+              try { const d = await mdFetch(`/manga/${mdId}?includes[]=cover_art`); cover = coverUrl(d.data) || ''; } catch {}
+            }
+            const chLatest = await getLatestCh(mdId, title, type);
+            lib.push({ id: uid(), title, mdId, cover, seriesStatus, type, readingStatus: item.readingStatus || 'reading', chRead: item.chRead || 0, chLatest: chLatest || item.chRead || 0, hasNew: (chLatest||0) > (item.chRead||0), addedAt: Date.now() });
+          } else {
+            lib.push({ id: uid(), title: item.title, mdId: '', cover: '', seriesStatus: 'ongoing', type: item.type || 'manga', readingStatus: item.readingStatus || 'reading', chRead: item.chRead || 0, chLatest: item.chLatest || item.chRead || 0, hasNew: false, addedAt: Date.now() });
+          }
+          added++;
+          saveLib();
+        } catch {}
+      }));
+      renderLib();
+      if (i + BATCH < lookupItems.length) await sleep(400);
+    }
   }
 
   prog.textContent = `✓ Done! Added ${added} manga.`;
@@ -812,7 +828,7 @@ async function bulkMDImport() {
       const type = mdType(manga);
       const cover = coverUrl(manga) || '';
       const seriesStatus = manga.attributes.status || 'ongoing';
-      const chLatest = await getLatestCh(mdId, title);
+      const chLatest = await getLatestCh(mdId, title, type);
       lib.push({ id: uid(), title, mdId, cover, seriesStatus, type, readingStatus: 'reading', chRead: 0, chLatest: chLatest || 0, hasNew: (chLatest||0) > 0, addedAt: Date.now() });
       added++;
       saveLib();
@@ -987,31 +1003,36 @@ async function checkAllUpdates() {
   btn.classList.add('spinning');
   btn.disabled = true;
 
-  let found = 0, errors = 0;
-  showToast(`Checking ${tracked.length} manga via MangaDex…`);
+  let found = 0, errors = 0, done = 0;
+  const total = tracked.length;
+  showToast(`Checking ${total} manga…`);
 
-  for (const m of tracked) {
-    try {
-      let latest = await getLatestCh(m.mdId, m.title);
-      if (latest === null) { errors++; continue; }
-
-      if (latest > (m.chLatest || 0)) {
-        const old = m.chLatest || 0;
-        m.chLatest = latest;
-        m.hasNew = true;
-        found++;
-        updLog.unshift({ id: uid(), mangaId: m.id, title: m.title, type: m.type, oldCh: old, newCh: latest, cover: m.cover || '', time: Date.now(), read: false });
-      } else {
-        // Update stored latest in case we had wrong info
-        if (latest > 0 && (!m.chLatest || latest > m.chLatest)) {
+  // Process in parallel batches of 5 to avoid hammering APIs
+  const BATCH = 5;
+  for (let i = 0; i < tracked.length; i += BATCH) {
+    const batch = tracked.slice(i, i + BATCH);
+    await Promise.all(batch.map(async (m) => {
+      try {
+        const latest = await getLatestCh(m.mdId, m.title, m.type);
+        done++;
+        if (latest === null) { errors++; return; }
+        if (latest > (m.chLatest || 0)) {
+          const old = m.chLatest || 0;
+          m.chLatest = latest;
+          m.hasNew = true;
+          found++;
+          updLog.unshift({ id: uid(), mangaId: m.id, title: m.title, type: m.type, oldCh: old, newCh: latest, cover: m.cover || '', time: Date.now(), read: false });
+        } else if (latest > 0 && latest > (m.chLatest || 0)) {
           m.chLatest = latest;
         }
-      }
-      // Respect API rate limits
-      await sleep(400);
-    } catch (e) {
-      errors++;
-    }
+      } catch { errors++; }
+    }));
+    // Update toast progress after each batch
+    showToast(`Checking… ${Math.min(done + BATCH, total)}/${total}`);
+    saveLib();
+    renderLib();
+    // Small pause between batches to be polite to APIs
+    if (i + BATCH < tracked.length) await sleep(300);
   }
 
   updLog = updLog.slice(0, 100);
@@ -1156,7 +1177,7 @@ async function selectMD(info) {
 
   showToast('Fetching latest chapter from MangaDex…');
   try {
-    const ch = await getLatestCh(info.id, info.title);
+    const ch = await getLatestCh(info.id, info.title, info.type);
     if (ch !== null) {
       // Use whichever is higher: feed-based or lastChapter attribute
       const existing = parseFloat(document.getElementById('f-chlatest').value) || 0;
