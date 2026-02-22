@@ -164,9 +164,6 @@ header { padding: 28px 0 20px; border-bottom: 1px solid var(--border); display: 
 @media(max-width:600px){.logo-title{font-size:30px}.stats{gap:16px}.form-row{grid-template-columns:1fr}.grid{grid-template-columns:1fr 1fr}}
 @media(max-width:400px){.grid{grid-template-columns:1fr}}
 </style>
-<!-- CSS_ADSBLOCK_START -->
-<link rel="stylesheet" href="https://adblockers.opera-mini.net/css_block/default-domainless.css" type="text/css" />
-<!-- CSS_ADSBLOCK_END -->
 </head>
 <body>
 <div class="wrap">
@@ -330,19 +327,25 @@ async function searchMD(title) {
 }
 
 async function getLatestCh(mdId) {
-  // Strategy 1: English chapters with a generous limit to catch the true latest
-  try {
-    const d = await mdFetch(`/manga/${mdId}/feed?order[chapter]=desc&limit=96&translatedLanguage[]=en`);
-    const chs = (d.data || []).map(c => parseFloat(c.attributes.chapter)).filter(n => !isNaN(n) && n > 0);
-    if (chs.length) return Math.max(...chs);
-  } catch {}
-  // Strategy 2: Any language with a generous limit
-  try {
-    const d = await mdFetch(`/manga/${mdId}/feed?order[chapter]=desc&limit=96`);
-    const chs = (d.data || []).map(c => parseFloat(c.attributes.chapter)).filter(n => !isNaN(n) && n > 0);
-    if (chs.length) return Math.max(...chs);
-  } catch {}
-  // Strategy 3: Fallback to the manga's own lastChapter attribute (most reliable for chapter count)
+  // Strategy 1: Use the aggregate endpoint — returns ALL chapters grouped by volume/chapter,
+  // not per-scanlation-group-upload, so it is immune to the "96 limit filled by duplicates" problem.
+  // Try English first, then any language.
+  for (const lang of ["en", ""]) {
+    try {
+      const path = `/manga/${mdId}/aggregate` + (lang ? `?translatedLanguage[]=${lang}` : "");
+      const d = await mdFetch(path);
+      const volumes = d.volumes || {};
+      const chNums = [];
+      for (const vol of Object.values(volumes)) {
+        for (const ch of Object.values(vol.chapters || {})) {
+          const n = parseFloat(ch.chapter);
+          if (!isNaN(n) && n > 0) chNums.push(n);
+        }
+      }
+      if (chNums.length) return Math.max(...chNums);
+    } catch {}
+  }
+  // Strategy 2: Fallback to manga own lastChapter attribute
   try {
     const d = await mdFetch(`/manga/${mdId}`);
     const last = parseFloat(d.data?.attributes?.lastChapter);
