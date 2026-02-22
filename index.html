@@ -916,10 +916,21 @@ async function pFetch(url, timeout = 5000) {
   return { ok: false };
 }
 async function dFetch(url, opts = {}, timeout = 5000) {
+  // Try direct first
   try {
     const res = await fetch(url, { signal: AbortSignal.timeout(timeout), ...opts });
     if (res.ok) return res;
   } catch {}
+  // Fallback through proxies (needed for sites without CORS headers like Rinko)
+  for (const proxy of PROXIES) {
+    try {
+      const res = await fetch(proxy + encodeURIComponent(url), {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        signal: AbortSignal.timeout(timeout)
+      });
+      if (res.ok) return res;
+    } catch {}
+  }
   return { ok: false };
 }
 
@@ -1005,7 +1016,23 @@ async function getLatestCh(mdId, title = '', type = '') {
 
     // ── UNTRUSTED (title-search, strict similarity required) ─────────────────
 
-    // 5. ComicK title search — strict similarity match (fallback only)
+    // 5. Rinko Comics — scrape chapter count from comic page HTML
+    //    Works for manhwa hosted exclusively on rinkocomics.com
+    //    URL pattern: rinkocomics.com/comic/{slug}/
+    (async () => {
+      if (!title) return null;
+      // Build slug from title: lowercase, replace spaces/special chars with hyphens
+      const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      const url = `https://rinkocomics.com/comic/${slug}/`;
+      const res = await dFetch(url, {}, 8000);
+      if (!res.ok) return null;
+      const html = await res.text();
+      // Page contains "Chapters 51" or similar in the metadata
+      const m = html.match(/Chapters\s+(\d+)/i);
+      if (!m) return null;
+      const n = parseInt(m[1]);
+      return (!isNaN(n) && n > 0) ? { ch: n, source: 'Rinko Comics', t: 1 } : null;
+    })(),
     (async () => {
       if (!title) return null;
       const sr = await pFetch(`${COMICK}/v1.0/search?q=${encodeURIComponent(title)}&limit=10`, 6000);
@@ -1388,10 +1415,22 @@ async function debugSources(id) {
       const n = parseFloat(cd?.chapters?.[0]?.chap);
       return { label: 'ComicK (UUID)', ch: (!isNaN(n) && n > 0) ? n : null };
     })(),
+    // Rinko Comics scrape
+    (async () => {
+      const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      const url = `https://rinkocomics.com/comic/${slug}/`;
+      const res = await dFetch(url, {}, 8000);
+      if (!res.ok) return { label: 'Rinko Comics', ch: null };
+      const html = await res.text();
+      const match = html.match(/Chapters\s+(\d+)/i);
+      const n = match ? parseInt(match[1]) : null;
+      return { label: 'Rinko Comics', ch: (!isNaN(n) && n > 0) ? n : null };
+    })(),
   ]);
 
-  let html = `<div style="color:var(--muted);font-size:9px;letter-spacing:1px;margin-bottom:4px">MangaDex ID: ${m.mdId}</div>`;
-  html += `<div style="color:var(--muted);font-size:9px;letter-spacing:1px;margin-bottom:10px">Stored: chRead=${m.chRead} · chLatest=${m.chLatest || '?'} · source=${m.chSource||'none'}</div>`;
+  const latestDisp = m.chLatest || 0;
+  const sourceDisp = m.chSource || 'none';
+  html += `<div style="color:var(--muted);font-size:9px;letter-spacing:1px;margin-bottom:10px">Stored: chRead=${m.chRead} &middot; chLatest=${latestDisp} &middot; source=${sourceDisp}</div>`;
 
   for (const r of results) {
     if (r.status === 'fulfilled') {
