@@ -405,6 +405,17 @@ header { padding: 28px 0 20px; border-bottom: 1px solid var(--border); display: 
   </div>
 </div>
 
+<!-- DEBUG MODAL -->
+<div class="overlay" id="debug-modal">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-hd">
+      <div class="modal-title" id="debug-title">SOURCE DEBUG</div>
+      <button class="close-btn" onclick="document.getElementById('debug-modal').classList.remove('open')">✕</button>
+    </div>
+    <div class="modal-body" id="debug-body" style="gap:8px;font-size:11px"></div>
+  </div>
+</div>
+
 <script>
 // ── CONSTANTS ────────────────────────────────────────────────────────────────
 const MD = 'https://api.mangadex.org';
@@ -821,6 +832,8 @@ function renderLib() {
           </div>
           <div class="card-actions">
             <button class="icon-btn" title="Mark chapter read" onclick="markRead('${m.id}')">✓</button>
+            <button class="icon-btn" title="Refresh this manga" onclick="refreshOne('${m.id}')">↻</button>
+            <button class="icon-btn" title="Debug sources" onclick="debugSources('${m.id}')">🔍</button>
             <button class="icon-btn" title="Edit" onclick="openEdit('${m.id}')">✎</button>
             <button class="icon-btn del" title="Remove" onclick="del('${m.id}')">✕</button>
           </div>
@@ -1285,7 +1298,115 @@ async function save() {
   saveLib(); closeModal(); renderLib();
 }
 
-// ── HELPERS ───────────────────────────────────────────────────────────────────
+// ── REFRESH SINGLE MANGA ─────────────────────────────────────────────────────
+async function refreshOne(id) {
+  const m = lib.find(x => x.id === id);
+  if (!m) return;
+  showToast(`Refreshing ${m.title}…`);
+  try {
+    const r = await getLatestCh(m.mdId, m.title, m.type);
+    if (r && r.ch > 0) {
+      const old = m.chLatest || 0;
+      m.chSource = r.source;
+      m.chLatest = r.ch;
+      m.hasNew = m.chLatest > (m.chRead || 0);
+      if (r.ch > old) {
+        updLog.unshift({ id: uid(), mangaId: m.id, title: m.title, type: m.type, oldCh: old, newCh: r.ch, source: r.source, cover: m.cover || '', time: Date.now(), read: false });
+        saveLog();
+      }
+      saveLib(); renderLib();
+      showToast(`${m.title} → Ch.${r.ch} via ${r.source} ✓`);
+    } else {
+      showToast(`Could not fetch chapters for ${m.title}`, 'err');
+    }
+  } catch(e) {
+    showToast(`Error: ${e.message}`, 'err');
+  }
+}
+
+// ── DEBUG SOURCES — shows what every API returns for a manga ─────────────────
+async function debugSources(id) {
+  const m = lib.find(x => x.id === id);
+  if (!m) return;
+
+  const modal = document.getElementById('debug-modal');
+  const body = document.getElementById('debug-body');
+  document.getElementById('debug-title').textContent = `DEBUG: ${m.title}`;
+  body.innerHTML = `<div style="color:var(--muted);text-align:center;padding:20px;letter-spacing:2px">QUERYING ALL SOURCES…</div>`;
+  modal.classList.add('open');
+
+  const row = (label, ch, source, status) => {
+    const color = status === 'ok' ? 'var(--accent3)' : status === 'err' ? 'var(--accent)' : 'var(--muted)';
+    const chTxt = ch !== null ? `<strong style="color:${color}">Ch.${ch}</strong>` : `<span style="color:var(--accent)">—</span>`;
+    return `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;background:var(--surface);border:1px solid var(--border);border-left:3px solid ${color}">
+      <span style="color:var(--muted);font-size:9px;letter-spacing:1px;text-transform:uppercase">${label}</span>
+      <span>${chTxt}</span>
+    </div>`;
+  };
+
+  // Run all sources individually so we can show each result
+  const results = await Promise.allSettled([
+    // Feed
+    (async () => {
+      const d = await mdFetch(`/manga/${m.mdId}/feed?limit=500&offset=0&order[chapter]=desc&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic`);
+      const nums = (d?.data || []).map(c => parseFloat(c.attributes?.chapter)).filter(n => !isNaN(n) && n > 0);
+      return { label: 'MangaDex Feed', ch: nums.length ? Math.max(...nums) : null, count: nums.length };
+    })(),
+    // Aggregate
+    (async () => {
+      const d = await mdFetch(`/manga/${m.mdId}/aggregate`);
+      const nums = [];
+      for (const vol of Object.values(d.volumes || {}))
+        for (const ch of Object.values(vol.chapters || {})) { const n = parseFloat(ch.chapter); if (!isNaN(n) && n > 0) nums.push(n); }
+      return { label: 'MangaDex Aggregate', ch: nums.length ? Math.max(...nums) : null };
+    })(),
+    // lastChapter meta
+    (async () => {
+      const d = await mdFetch(`/manga/${m.mdId}`);
+      const n = parseFloat(d.data?.attributes?.lastChapter);
+      return { label: 'MangaDex lastChapter (meta)', ch: (!isNaN(n) && n > 0) ? n : null };
+    })(),
+    // ComicK UUID
+    (async () => {
+      const ir = await pFetch(`${COMICK}/comic/${m.mdId}`, 6000);
+      if (!ir.ok) return { label: 'ComicK (UUID)', ch: null };
+      const info = await ir.json();
+      const slug = info?.comic?.slug || info?.slug;
+      if (!slug) return { label: 'ComicK (UUID)', ch: null };
+      const cr = await pFetch(`${COMICK}/comic/${slug}/chapters?limit=1&page=1&chap-order=desc`, 6000);
+      if (!cr.ok) return { label: 'ComicK (UUID)', ch: null };
+      const cd = await cr.json();
+      const n = parseFloat(cd?.chapters?.[0]?.chap);
+      return { label: 'ComicK (UUID)', ch: (!isNaN(n) && n > 0) ? n : null };
+    })(),
+  ]);
+
+  let html = `<div style="color:var(--muted);font-size:9px;letter-spacing:1px;margin-bottom:4px">MangaDex ID: ${m.mdId}</div>`;
+  html += `<div style="color:var(--muted);font-size:9px;letter-spacing:1px;margin-bottom:10px">Stored: chRead=${m.chRead} · chLatest=${m.chLatest || '?'} · source=${m.chSource||'none'}</div>`;
+
+  for (const r of results) {
+    if (r.status === 'fulfilled') {
+      const { label, ch, count } = r.value;
+      const extra = count !== undefined ? ` (${count} chapters found)` : '';
+      html += row(label + extra, ch, label, ch !== null ? 'ok' : 'err');
+    } else {
+      html += row('ERROR', null, '', 'err');
+    }
+  }
+
+  const allChs = results.filter(r => r.status === 'fulfilled' && r.value.ch !== null).map(r => r.value.ch);
+  if (allChs.length) {
+    const best = Math.max(...allChs);
+    html += `<div style="margin-top:8px;padding:10px;background:var(--card);border:1px solid var(--accent3);text-align:center">
+      <span style="color:var(--muted);font-size:9px;letter-spacing:2px">BEST RESULT → </span>
+      <strong style="color:var(--accent3);font-size:16px">Ch.${best}</strong>
+    </div>`;
+  }
+
+  body.innerHTML = html;
+}
+
+
 function showToast(msg, type) {
   const t = document.getElementById('toast');
   t.textContent = msg;
@@ -1298,6 +1419,7 @@ function esc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+document.getElementById('debug-modal').addEventListener('click', e => { if (e.target===e.currentTarget) e.currentTarget.classList.remove('open'); });
 // Close on overlay click
 document.getElementById('modal').addEventListener('click', e => { if (e.target===e.currentTarget) closeModal(); });
 // Close results on outside click
