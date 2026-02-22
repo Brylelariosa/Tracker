@@ -192,7 +192,7 @@ header { padding: 28px 0 20px; border-bottom: 1px solid var(--border); display: 
   <header>
     <div>
       <div class="logo-title">MANGA<span>TRACK</span></div>
-      <div class="logo-sub">Live updates via MangaDex · ComicK · MangaUpdates · AniList · Kitsu</div>
+      <div class="logo-sub">Live updates via MangaDex · ComicK · MangaUpdates · AniList</div>
     </div>
     <div class="header-right">
       <button class="btn btn-outline" onclick="openImport()">⬆ IMPORT</button>
@@ -410,7 +410,6 @@ const MD = 'https://api.mangadex.org';
 const COVERS = 'https://uploads.mangadex.org/covers';
 const COMICK = 'https://api.comick.fun';
 const ANILIST = 'https://graphql.anilist.co';
-const KITSU = 'https://kitsu.io/api/edge';
 const MU = 'https://api.mangaupdates.com/v1';
 
 // ── STATE ────────────────────────────────────────────────────────────────────
@@ -899,180 +898,151 @@ async function dFetch(url, opts = {}, timeout = 5000) {
 // ── TITLE NORMALIZER ─────────────────────────────────────────────────────────
 const norm = s => String(s).toLowerCase().replace(/[^a-z0-9]/g, '');
 
+// Similarity score: how many chars of needle exist in haystack (0–1)
+function titleSim(a, b) {
+  const na = norm(a), nb = norm(b);
+  if (na === nb) return 1;
+  if (nb.includes(na) || na.includes(nb)) return 0.9;
+  // Count matching chars
+  let match = 0;
+  for (let i = 0; i < Math.min(na.length, nb.length); i++) if (na[i] === nb[i]) match++;
+  return match / Math.max(na.length, nb.length);
+}
+
 // ── GET LATEST CHAPTER ────────────────────────────────────────────────────────
-// Sources (all fire in parallel, winner = highest chapter number):
-//   1. ComicK UUID      — fastest for MangaDex-indexed titles
-//   2. ComicK search    — title search with fuzzy matching
-//   3. MangaUpdates API — best for scanlation-only manhwa/manhua (FREE, no auth)
-//   4. MangaDex attr    — quick lastChapter field
-//   5. MangaDex agg     — all languages, raw raws
-//   6. MangaDex feed    — scanlation releases
-//   7. AniList          — good for completed series chapter totals
-//   8. Kitsu            — additional completed series data
-// Hard cap: 8s timeout so no single slow source blocks the UI.
+// Strategy: MangaDex UUID sources are authoritative (exact match guaranteed).
+// Title-search sources (ComicK search, MangaUpdates, AniList) are used only if:
+//   - Similarity score > 0.85 (strict matching to avoid wrong series)
+//   - AniList/Kitsu ONLY used for completed series (chapters field is null for ongoing)
+// Winner = highest chapter number among trusted results.
 async function getLatestCh(mdId, title = '', type = '') {
 
-  const sources = [
+  // ── Phase 1: UUID-based sources — run in parallel, fast & exact ─────────────
+  const [comickUUID, mdAttr, mdAgg, mdFeed] = await Promise.allSettled([
 
-    // ── 1. ComicK by MangaDex UUID ───────────────────────────────────────────
+    // ComicK by MangaDex UUID — most accurate for manhwa/manhua
     (async () => {
-      try {
-        const ir = await pFetch(`${COMICK}/comic/${mdId}`, 5000);
-        if (ir.ok) {
-          const info = await ir.json();
-          const slug = info?.comic?.slug || info?.slug;
-          if (slug) {
-            const cr = await pFetch(`${COMICK}/comic/${slug}/chapters?limit=1&page=1&chap-order=desc`, 5000);
-            if (cr.ok) {
-              const cd = await cr.json();
-              const n = parseFloat(cd?.chapters?.[0]?.chap);
-              if (!isNaN(n) && n > 0) return { ch: n, source: 'ComicK' };
-            }
-          }
+      const ir = await pFetch(`${COMICK}/comic/${mdId}`, 5000);
+      if (!ir.ok) return null;
+      const info = await ir.json();
+      const slug = info?.comic?.slug || info?.slug;
+      if (!slug) return null;
+      const cr = await pFetch(`${COMICK}/comic/${slug}/chapters?limit=1&page=1&chap-order=desc`, 5000);
+      if (!cr.ok) return null;
+      const cd = await cr.json();
+      const n = parseFloat(cd?.chapters?.[0]?.chap);
+      return (!isNaN(n) && n > 0) ? { ch: n, source: 'ComicK' } : null;
+    })(),
+
+    // MangaDex lastChapter attribute
+    (async () => {
+      const d = await mdFetch(`/manga/${mdId}`);
+      const n = parseFloat(d.data?.attributes?.lastChapter);
+      return (!isNaN(n) && n > 0) ? { ch: n, source: 'MangaDex' } : null;
+    })(),
+
+    // MangaDex aggregate — all uploaded chapters across all languages
+    (async () => {
+      const d = await mdFetch(`/manga/${mdId}/aggregate`);
+      const nums = [];
+      for (const vol of Object.values(d.volumes || {}))
+        for (const ch of Object.values(vol.chapters || {})) {
+          const n = parseFloat(ch.chapter); if (!isNaN(n) && n > 0) nums.push(n);
         }
-      } catch {}
-      return null;
+      return nums.length ? { ch: Math.max(...nums), source: 'MangaDex (agg)' } : null;
     })(),
 
-    // ── 2. ComicK by title search (fuzzy, best-match first) ─────────────────
+    // MangaDex chapter feed — catches scanlation-uploaded chapters
     (async () => {
-      if (!title) return null;
-      try {
-        const sr = await pFetch(`${COMICK}/v1.0/search?q=${encodeURIComponent(title)}&limit=8`, 5000);
-        if (!sr.ok) return null;
-        const results = await sr.json();
-        const titleNorm = norm(title);
-        // Prefer exact match → starts-with → first result
-        const best = results?.find(r => norm(r.title) === titleNorm)
-          || results?.find(r => norm(r.title).startsWith(titleNorm.slice(0, 8)))
-          || results?.[0];
-        if (!best?.slug) return null;
-        const cr = await pFetch(`${COMICK}/comic/${best.slug}/chapters?limit=1&page=1&chap-order=desc`, 5000);
-        if (!cr.ok) return null;
-        const cd = await cr.json();
-        const n = parseFloat(cd?.chapters?.[0]?.chap);
-        if (!isNaN(n) && n > 0) return { ch: n, source: 'ComicK' };
-      } catch {}
-      return null;
+      const d = await mdFetch(`/manga/${mdId}/feed?limit=96&order[chapter]=desc&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic`);
+      const nums = (d?.data || []).map(c => parseFloat(c.attributes?.chapter)).filter(n => !isNaN(n) && n > 0);
+      return nums.length ? { ch: Math.max(...nums), source: 'MangaDex (feed)' } : null;
     })(),
-
-    // ── 3. MangaUpdates API — critical for scanlation manhwa not on MangaDex ─
-    // Free API, no auth, returns latest chapter releases per series.
-    (async () => {
-      if (!title) return null;
-      try {
-        const sr = await dFetch(`${MU}/series/search`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ search: title, perpage: 5, type: 'manga' })
-        }, 6000);
-        if (!sr.ok) return null;
-        const sd = await sr.json();
-        const results = sd?.results || [];
-        const titleNorm = norm(title);
-        const best = results.find(r => norm(r.record?.title) === titleNorm)
-          || results.find(r => norm(r.record?.title).startsWith(titleNorm.slice(0,8)))
-          || results[0];
-        const seriesId = best?.record?.series_id;
-        if (!seriesId) return null;
-        // Get releases for this series (most recent first)
-        const rr = await dFetch(`${MU}/releases/search`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ search: '', series_id: seriesId, perpage: 5, asc: false })
-        }, 6000);
-        if (!rr.ok) return null;
-        const rd = await rr.json();
-        const chapters = (rd?.results || [])
-          .map(r => parseFloat(r.record?.chapter))
-          .filter(n => !isNaN(n) && n > 0);
-        if (chapters.length) return { ch: Math.max(...chapters), source: 'MangaUpdates' };
-      } catch {}
-      return null;
-    })(),
-
-    // ── 4. MangaDex lastChapter attr — single fast call ──────────────────────
-    (async () => {
-      try {
-        const d = await mdFetch(`/manga/${mdId}`);
-        const n = parseFloat(d.data?.attributes?.lastChapter);
-        if (!isNaN(n) && n > 0) return { ch: n, source: 'MangaDex' };
-      } catch {}
-      return null;
-    })(),
-
-    // ── 5. MangaDex aggregate — all languages, picks highest ─────────────────
-    (async () => {
-      try {
-        const d = await mdFetch(`/manga/${mdId}/aggregate`);
-        const nums = [];
-        for (const vol of Object.values(d.volumes || {}))
-          for (const ch of Object.values(vol.chapters || {})) {
-            const n = parseFloat(ch.chapter); if (!isNaN(n) && n > 0) nums.push(n);
-          }
-        if (nums.length) return { ch: Math.max(...nums), source: 'MangaDex (agg)' };
-      } catch {}
-      return null;
-    })(),
-
-    // ── 6. MangaDex feed (all languages) — catches scanlation-only releases ──
-    (async () => {
-      try {
-        const d = await mdFetch(`/manga/${mdId}/feed?limit=96&order[chapter]=desc&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic`);
-        const nums = (d?.data || []).map(c => parseFloat(c.attributes?.chapter)).filter(n => !isNaN(n) && n > 0);
-        if (nums.length) return { ch: Math.max(...nums), source: 'MangaDex (feed)' };
-      } catch {}
-      return null;
-    })(),
-
-    // ── 7. AniList — CORS-friendly, reliable for completed totals ────────────
-    (async () => {
-      if (!title) return null;
-      try {
-        const r = await dFetch(ANILIST, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            query: `query($s:String){Media(search:$s,type:MANGA){chapters status}}`,
-            variables: { s: title }
-          })
-        }, 5000);
-        if (!r.ok) return null;
-        const d = await r.json();
-        const n = parseFloat(d?.data?.Media?.chapters);
-        if (!isNaN(n) && n > 0) return { ch: n, source: 'AniList' };
-      } catch {}
-      return null;
-    })(),
-
-    // ── 8. Kitsu — CORS-friendly, additional completed totals ────────────────
-    (async () => {
-      if (!title) return null;
-      try {
-        const r = await dFetch(`${KITSU}/manga?filter[text]=${encodeURIComponent(title)}&page[limit]=3`, {
-          headers: { 'Accept': 'application/vnd.api+json' }
-        }, 5000);
-        if (!r.ok) return null;
-        const d = await r.json();
-        const counts = (d?.data || []).map(e => parseFloat(e.attributes?.chapterCount)).filter(n => !isNaN(n) && n > 0);
-        if (counts.length) return { ch: Math.max(...counts), source: 'Kitsu' };
-      } catch {}
-      return null;
-    })(),
-  ];
-
-  // Collect all within 8s hard cap — return the highest chapter found
-  const settled = await Promise.race([
-    Promise.allSettled(sources),
-    new Promise(res => setTimeout(() => res([]), 8000))
   ]);
 
-  const candidates = (settled || [])
-    .filter(r => r?.status === 'fulfilled' && r.value?.ch > 0)
+  const uuidResults = [comickUUID, mdAttr, mdAgg, mdFeed]
+    .filter(r => r.status === 'fulfilled' && r.value?.ch > 0)
     .map(r => r.value);
 
-  if (!candidates.length) return null;
-  return candidates.reduce((a, b) => b.ch > a.ch ? b : a);
+  // Best from UUID sources — this is our baseline, guaranteed correct series
+  const uuidBest = uuidResults.length
+    ? uuidResults.reduce((a, b) => b.ch > a.ch ? b : a)
+    : null;
+
+  // If UUID sources found something reasonable, trust it and return immediately
+  // (skip slow title-search sources which risk wrong-series matches)
+  if (uuidBest && uuidBest.ch > 0) return uuidBest;
+
+  // ── Phase 2: Title-search fallback (only when UUID sources all failed) ───────
+  // Strict title similarity required (≥0.85) to avoid wrong-series matches.
+  if (!title) return null;
+
+  const [comickSearch, muResult, alResult] = await Promise.allSettled([
+
+    // ComicK title search — strict match only
+    (async () => {
+      const sr = await pFetch(`${COMICK}/v1.0/search?q=${encodeURIComponent(title)}&limit=8`, 5000);
+      if (!sr.ok) return null;
+      const results = await sr.json();
+      const best = (results || []).find(r => titleSim(title, r.title || '') >= 0.85);
+      if (!best?.slug) return null;
+      const cr = await pFetch(`${COMICK}/comic/${best.slug}/chapters?limit=1&page=1&chap-order=desc`, 5000);
+      if (!cr.ok) return null;
+      const cd = await cr.json();
+      const n = parseFloat(cd?.chapters?.[0]?.chap);
+      return (!isNaN(n) && n > 0) ? { ch: n, source: 'ComicK' } : null;
+    })(),
+
+    // MangaUpdates — scanlation release tracking, strict match only
+    (async () => {
+      const sr = await dFetch(`${MU}/series/search`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ search: title, perpage: 8 })
+      }, 6000);
+      if (!sr.ok) return null;
+      const sd = await sr.json();
+      const best = (sd?.results || []).find(r => titleSim(title, r.record?.title || '') >= 0.85);
+      if (!best?.record?.series_id) return null;
+      const rr = await dFetch(`${MU}/releases/search`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ search: '', series_id: best.record.series_id, perpage: 5, asc: false })
+      }, 6000);
+      if (!rr.ok) return null;
+      const rd = await rr.json();
+      const chapters = (rd?.results || []).map(r => parseFloat(r.record?.chapter)).filter(n => !isNaN(n) && n > 0);
+      return chapters.length ? { ch: Math.max(...chapters), source: 'MangaUpdates' } : null;
+    })(),
+
+    // AniList — ONLY reliable for COMPLETED series (ongoing = null chapters field)
+    (async () => {
+      const r = await dFetch(ANILIST, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: `query($s:String){Media(search:$s,type:MANGA){chapters status title{romaji english}}}`,
+          variables: { s: title }
+        })
+      }, 5000);
+      if (!r.ok) return null;
+      const d = await r.json();
+      const media = d?.data?.Media;
+      // Only trust if completed AND title matches well
+      if (media?.status !== 'FINISHED') return null;
+      const alTitle = media?.title?.romaji || media?.title?.english || '';
+      if (titleSim(title, alTitle) < 0.75) return null;
+      const n = parseFloat(media?.chapters);
+      return (!isNaN(n) && n > 0) ? { ch: n, source: 'AniList' } : null;
+    })(),
+  ]);
+
+  const fallbackResults = [comickSearch, muResult, alResult]
+    .filter(r => r.status === 'fulfilled' && r.value?.ch > 0)
+    .map(r => r.value);
+
+  if (!fallbackResults.length) return null;
+  return fallbackResults.reduce((a, b) => b.ch > a.ch ? b : a);
 }
 
 // ── CHECK UPDATES — all manga fire in parallel, UI updates as each resolves ──
