@@ -301,6 +301,7 @@ header { padding: 28px 0 20px; border-bottom: 1px solid var(--border); display: 
 const PROXY = 'https://corsproxy.io/?';
 const MD = 'https://api.mangadex.org';
 const COVERS = 'https://uploads.mangadex.org/covers';
+const COMICK = 'https://api.comick.fun';
 
 // ── STATE ────────────────────────────────────────────────────────────────────
 let lib = JSON.parse(localStorage.getItem('mgt2_lib') || '[]');
@@ -327,55 +328,83 @@ async function searchMD(title) {
 }
 
 async function getLatestCh(mdId) {
-  // Strategy 1: aggregate endpoint (all languages) — best because it deduplicates per chapter number
-  try {
-    const d = await mdFetch(`/manga/${mdId}/aggregate`);
-    const volumes = d.volumes || {};
-    const chNums = [];
-    for (const vol of Object.values(volumes)) {
-      for (const ch of Object.values(vol.chapters || {})) {
-        const n = parseFloat(ch.chapter);
-        if (!isNaN(n) && n > 0) chNums.push(n);
-      }
-    }
-    if (chNums.length) return Math.max(...chNums);
-  } catch {}
+  // Run MangaDex strategies and ComicK lookup in parallel, return the highest value found
+  const candidates = [];
 
-  // Strategy 2: aggregate with English only
-  try {
-    const d = await mdFetch(`/manga/${mdId}/aggregate?translatedLanguage[]=en`);
-    const volumes = d.volumes || {};
-    const chNums = [];
-    for (const vol of Object.values(volumes)) {
-      for (const ch of Object.values(vol.chapters || {})) {
-        const n = parseFloat(ch.chapter);
-        if (!isNaN(n) && n > 0) chNums.push(n);
-      }
-    }
-    if (chNums.length) return Math.max(...chNums);
-  } catch {}
-
-  // Strategy 3: feed endpoint — sorted by chapter desc, high limit, all content ratings
-  for (const lang of ["en", "ja", "ja-ro", ""]) {
+  // ── MangaDex strategies ──────────────────────────────────────────────────
+  // Strategy 1: aggregate (all languages) — deduplicates per chapter number
+  const mdAggregate = (async () => {
     try {
-      const langParam = lang ? `&translatedLanguage[]=${lang}` : "";
-      const path = `/manga/${mdId}/feed?limit=96&order[chapter]=desc&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic${langParam}`;
+      const d = await mdFetch(`/manga/${mdId}/aggregate`);
+      const chNums = [];
+      for (const vol of Object.values(d.volumes || {}))
+        for (const ch of Object.values(vol.chapters || {})) {
+          const n = parseFloat(ch.chapter);
+          if (!isNaN(n) && n > 0) chNums.push(n);
+        }
+      if (chNums.length) return Math.max(...chNums);
+    } catch {}
+    return null;
+  })();
+
+  // Strategy 2: feed endpoint (all languages, desc order)
+  const mdFeed = (async () => {
+    try {
+      const path = `/manga/${mdId}/feed?limit=96&order[chapter]=desc&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic`;
       const d = await mdFetch(path);
-      const chapters = (d.data || []);
-      const chNums = chapters
+      const chNums = (d.data || [])
         .map(c => parseFloat(c.attributes?.chapter))
         .filter(n => !isNaN(n) && n > 0);
       if (chNums.length) return Math.max(...chNums);
     } catch {}
-  }
+    return null;
+  })();
 
-  // Strategy 4: manga lastChapter attribute
-  try {
-    const d = await mdFetch(`/manga/${mdId}`);
-    const last = parseFloat(d.data?.attributes?.lastChapter);
-    if (!isNaN(last) && last > 0) return last;
-  } catch {}
+  // Strategy 3: lastChapter attribute
+  const mdAttr = (async () => {
+    try {
+      const d = await mdFetch(`/manga/${mdId}`);
+      const last = parseFloat(d.data?.attributes?.lastChapter);
+      if (!isNaN(last) && last > 0) return last;
+    } catch {}
+    return null;
+  })();
 
+  // ── ComicK fallback (often more up-to-date than MangaDex) ───────────────
+  // ComicK can search by MangaDex ID directly
+  const comickLatest = (async () => {
+    try {
+      // Look up manga on ComicK using the MangaDex ID
+      const searchUrl = PROXY + encodeURIComponent(`${COMICK}/v1.0/search?q=${mdId}&limit=1`);
+      const sr = await fetch(searchUrl, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+      if (!sr.ok) return null;
+      const results = await sr.json();
+      const slug = results?.[0]?.slug;
+      if (!slug) return null;
+
+      // Get latest chapters for this slug
+      const chapUrl = PROXY + encodeURIComponent(`${COMICK}/comic/${slug}/chapters?lang=en&limit=1&page=1&chap-order=desc`);
+      const cr = await fetch(chapUrl, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+      if (!cr.ok) return null;
+      const chapData = await cr.json();
+      const chap = parseFloat(chapData?.chapters?.[0]?.chap);
+      if (!isNaN(chap) && chap > 0) return chap;
+
+      // Also try without lang filter for any language
+      const chapUrlAny = PROXY + encodeURIComponent(`${COMICK}/comic/${slug}/chapters?limit=1&page=1&chap-order=desc`);
+      const cra = await fetch(chapUrlAny, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+      if (!cra.ok) return null;
+      const chapDataAny = await cra.json();
+      const chapAny = parseFloat(chapDataAny?.chapters?.[0]?.chap);
+      if (!isNaN(chapAny) && chapAny > 0) return chapAny;
+    } catch {}
+    return null;
+  })();
+
+  // Wait for all in parallel
+  const [v1, v2, v3, v4] = await Promise.all([mdAggregate, mdFeed, mdAttr, comickLatest]);
+  const all = [v1, v2, v3, v4].filter(v => v !== null && v > 0);
+  if (all.length) return Math.max(...all);
   return null;
 }
 
