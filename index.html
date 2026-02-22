@@ -4,7 +4,7 @@
     <meta name="referrer" content="no-referrer">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>MangaTrack — Real Chapter Updates v13</title>
+<title>MangaTrack v14</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;700;900&family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&family=Bebas+Neue&display=swap" rel="stylesheet">
 <style>
 :root {
@@ -93,13 +93,13 @@ header { padding: 28px 0 20px; border-bottom: 1px solid var(--border); display: 
 .card-type { font-size:8px; letter-spacing:3px; text-transform:uppercase; margin-bottom:5px; }
 .type-manga{color:var(--accent)} .type-manhua{color:var(--accent2)} .type-manhwa{color:var(--accent3)}
 .card-title { font-family:'Noto Serif JP',serif; font-size:14px; font-weight:700; line-height:1.35; margin-bottom:10px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
-.card-meta { display:flex; flex-direction:column; gap:6px; }
-.card-meta-top { display:flex; justify-content:space-between; align-items:flex-start; }
-.card-actions { display:flex; gap:4px; }
-.icon-btn { background:var(--surface); border:1px solid var(--border); color:var(--muted); min-width:26px; height:26px; padding:0 4px; display:flex; align-items:center; justify-content:center; cursor:pointer; font-size:10px; transition:all .15s; flex-shrink:0; }
+.card-meta { display:flex; justify-content:space-between; align-items:flex-start; gap:8px; }
+.card-actions { display:flex; gap:4px; flex-wrap:wrap; justify-content:flex-end; }
 .ch-read { font-size:10px; color:var(--muted); }
 .ch-latest { font-size:12px; color:var(--text); margin-top:2px; }
 .ch-latest.new { color:var(--accent3); }
+.card-actions { display:flex; gap:5px; }
+.icon-btn { background:var(--surface); border:1px solid var(--border); color:var(--muted); min-width:26px; height:26px; padding:0 4px; display:flex; align-items:center; justify-content:center; cursor:pointer; font-size:10px; transition:all .15s; flex-shrink:0; }
 .icon-btn:hover { border-color:var(--accent); color:var(--accent); }
 .icon-btn.del:hover { border-color:#f55; color:#f55; }
 .card-foot { margin-top:8px; font-size:9px; color:var(--muted); display:flex; align-items:center; gap:5px; }
@@ -193,7 +193,7 @@ header { padding: 28px 0 20px; border-bottom: 1px solid var(--border); display: 
   <header>
     <div>
       <div class="logo-title">MANGA<span>TRACK</span></div>
-      <div class="logo-sub">MangaDex-primary · ComicK · AniList fallback</div>
+      <div class="logo-sub">MangaDex · Custom URL auto-detect</div>
     </div>
     <div class="header-right">
       <button class="btn btn-outline" onclick="openImport()">⬆ IMPORT</button>
@@ -261,7 +261,7 @@ header { padding: 28px 0 20px; border-bottom: 1px solid var(--border); display: 
     </div>
     <div class="modal-body">
       <div class="info-note">
-        <strong>How it works:</strong> Search for a title to auto-fill from MangaDex. Latest chapter is fetched directly from MangaDex (feed + aggregate, all languages) — the highest number wins. ComicK and AniList are used as fallback. Hit <strong style="color:var(--accent3)">Check Updates</strong> anytime to refresh all.
+        <strong>How it works:</strong> Search to auto-fill from MangaDex. Chapters are fetched from MangaDex feed. For manga not on MangaDex, paste any chapter-list page URL into <strong style="color:var(--accent2)">Custom Source URL</strong> — it auto-detects the latest chapter from any site.
       </div>
 
       <div class="form-group" id="search-section">
@@ -308,19 +308,31 @@ header { padding: 28px 0 20px; border-bottom: 1px solid var(--border); display: 
         </div>
       </div>
       <div class="form-group">
-        <label class="form-label">MangaDex ID <span style="color:var(--muted);font-size:8px">(auto from search — required for live updates)</span></label>
+        <label class="form-label">MangaDex ID <span style="color:var(--muted);font-size:8px">(auto from search)</span></label>
         <input class="form-input" id="f-mdid" placeholder="e.g. a1c7c817-4e59-43b7-9365-09675a149a6f">
       </div>
       <div class="form-group">
-        <label class="form-label">Custom Source URL <span style="color:var(--accent2);font-size:8px">optional — for chapters not on MangaDex</span></label>
-        <input class="form-input" id="f-customurl" placeholder="e.g. https://rinkocomics.com/comic/job-change-log/">
-        <div style="font-size:9px;color:var(--muted);margin-top:4px;letter-spacing:.5px">Paste the manga's chapter list page. The tracker will scrape the highest chapter number from it.</div>
+        <label class="form-label">Custom Source URL <span style="color:var(--accent2);font-size:8px">optional</span></label>
+        <input class="form-input" id="f-customurl" placeholder="https://arenascan.com/manga/job-change-log/" oninput="previewCustomUrl(this.value)">
+        <div id="custom-url-preview" style="font-size:9px;color:var(--muted);margin-top:5px;min-height:14px;letter-spacing:.5px"></div>
       </div>
     </div>
     <div class="modal-ft">
       <button class="btn btn-outline" onclick="closeModal()">Cancel</button>
       <button class="btn btn-primary" onclick="save()">SAVE</button>
     </div>
+  </div>
+</div>
+
+
+<!-- DEBUG MODAL -->
+<div class="overlay" id="debug-modal">
+  <div class="modal" style="max-width:500px">
+    <div class="modal-hd" style="position:sticky;top:0;background:var(--card);z-index:2">
+      <div class="modal-title" id="debug-title">SOURCE DEBUG</div>
+      <button class="close-btn" onclick="document.getElementById('debug-modal').classList.remove('open')">✕</button>
+    </div>
+    <div class="modal-body" id="debug-body" style="gap:8px"></div>
   </div>
 </div>
 
@@ -411,381 +423,67 @@ header { padding: 28px 0 20px; border-bottom: 1px solid var(--border); display: 
   </div>
 </div>
 
-<!-- DEBUG MODAL -->
-<div class="overlay" id="debug-modal">
-  <div class="modal" style="max-width:560px">
-    <div class="modal-hd">
-      <div class="modal-title" id="debug-title">SOURCE DEBUG</div>
-      <button class="close-btn" onclick="document.getElementById('debug-modal').classList.remove('open')">✕</button>
-    </div>
-    <div class="modal-body" id="debug-body" style="gap:8px;font-size:11px"></div>
-  </div>
-</div>
-
 <script>
-// ── CONSTANTS ────────────────────────────────────────────────────────────────
+// ── CONSTANTS ─────────────────────────────────────────────────────────────────
 const MD = 'https://api.mangadex.org';
 const COVERS = 'https://uploads.mangadex.org/covers';
-const COMICK = 'https://api.comick.fun';
-const ANILIST = 'https://graphql.anilist.co';
-const MU = 'https://api.mangaupdates.com/v1';
-
-// ── STATE ────────────────────────────────────────────────────────────────────
-let lib = JSON.parse(localStorage.getItem('mgt2_lib') || '[]');
-let updLog = JSON.parse(localStorage.getItem('mgt2_log') || '[]');
-let editId = null;
-let mdTimer = null;
-
-function saveLib() { localStorage.setItem('mgt2_lib', JSON.stringify(lib)); }
-function saveLog() { localStorage.setItem('mgt2_log', JSON.stringify(updLog)); }
-function uid() { return Math.random().toString(36).slice(2, 10); }
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
-
-// ── API ──────────────────────────────────────────────────────────────────────
 const PROXIES = [
   'https://corsproxy.io/?',
   'https://api.allorigins.win/raw?url=',
   'https://thingproxy.freeboard.io/fetch/',
 ];
 
-async function mdFetch(path) {
-  const target = MD + path;
-  // MangaDex API natively supports CORS — try direct first (no URL mangling, fastest)
-  try {
-    const res = await fetch(target, { signal: AbortSignal.timeout(8000) });
-    if (res.ok) return res.json();
-  } catch {}
-  // Proxy fallback only if direct call fails
-  for (const proxy of PROXIES) {
-    try {
-      const res = await fetch(proxy + encodeURIComponent(target), {
-        headers: { 'X-Requested-With': 'XMLHttpRequest' },
-        signal: AbortSignal.timeout(8000)
-      });
-      if (res.ok) return res.json();
-    } catch {}
-  }
-  throw new Error('MangaDex unreachable: ' + path);
-}
-
-async function searchMD(title) {
-  const d = await mdFetch(`/manga?title=${encodeURIComponent(title)}&limit=8&includes[]=cover_art&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic`);
-  return d.data || [];
-}
-
-// ── IMPORT / EXPORT ───────────────────────────────────────────────────────────
-let importQueue = []; // pending items to import
+// ── STATE ─────────────────────────────────────────────────────────────────────
+let lib = JSON.parse(localStorage.getItem('mgt2_lib') || '[]');
+let updLog = JSON.parse(localStorage.getItem('mgt2_log') || '[]');
+let editId = null;
+let mdTimer = null;
+let importQueue = [];
 let currentIETab = 'paste';
 
-function openImport() {
-  importQueue = [];
-  document.getElementById('import-modal').classList.add('open');
-  document.getElementById('import-footer').style.display = 'none';
-  document.getElementById('paste-input').value = '';
-  document.getElementById('bulk-input').value = '';
-  document.getElementById('paste-preview').innerHTML = '';
-  document.getElementById('file-preview').innerHTML = '';
-  switchIETab('paste');
-}
-function closeImport() { document.getElementById('import-modal').classList.remove('open'); }
+function saveLib() { localStorage.setItem('mgt2_lib', JSON.stringify(lib)); }
+function saveLog() { localStorage.setItem('mgt2_log', JSON.stringify(updLog)); }
+function uid() { return Math.random().toString(36).slice(2, 10); }
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-function openExport() {
-  document.getElementById('export-count').textContent = lib.length;
-  const preview = lib.map(m => ({ title: m.title, type: m.type, readingStatus: m.readingStatus, chRead: m.chRead, chLatest: m.chLatest, mdId: m.mdId || '' }));
-  document.getElementById('export-preview').value = JSON.stringify(preview, null, 2);
-  document.getElementById('export-modal').classList.add('open');
-}
-function closeExport() { document.getElementById('export-modal').classList.remove('open'); }
-
-function switchIETab(name) {
-  currentIETab = name;
-  document.querySelectorAll('.ie-tab').forEach((t,i) => t.classList.toggle('active', ['paste','file','bulk'][i] === name));
-  document.querySelectorAll('.ie-panel').forEach(p => p.classList.remove('active'));
-  document.getElementById('ie-' + name).classList.add('active');
-  document.getElementById('import-footer').style.display = 'none';
-  importQueue = [];
-}
-
-// ── PASTE IMPORT ─────────────────────────────────────────────────────────────
-function parsePasteInput() {
-  const raw = document.getElementById('paste-input').value.trim();
-  if (!raw) { showToast('Paste some titles first!', 'err'); return; }
-  const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
-  importQueue = lines.map(line => {
-    const parts = line.split(',');
-    const title = parts[0].trim();
-    const chRead = parseFloat(parts[1]) || 0;
-    const existing = lib.find(m => m.title.toLowerCase() === title.toLowerCase());
-    return { title, chRead, status: existing ? 'dup' : 'ok', existing };
+// ── FETCH — race direct + all proxies simultaneously ──────────────────────────
+function fetchWithTimeout(url, opts, ms) {
+  return new Promise(resolve => {
+    const timer = setTimeout(() => resolve(null), ms);
+    fetch(url, opts || {}).then(res => {
+      clearTimeout(timer);
+      resolve(res.ok ? res : null);
+    }).catch(() => { clearTimeout(timer); resolve(null); });
   });
-  renderImportPreview('paste-preview');
 }
 
-function renderImportPreview(containerId) {
-  const container = document.getElementById(containerId);
-  if (!importQueue.length) { container.innerHTML = ''; return; }
-  const okCount = importQueue.filter(i => i.status === 'ok').length;
-  const dupCount = importQueue.filter(i => i.status === 'dup').length;
-  container.innerHTML = `
-    <div style="font-size:9px;color:var(--muted);padding:8px 0;letter-spacing:1px">
-      ${okCount} NEW · ${dupCount} ALREADY IN LIBRARY (will skip)
-    </div>
-    <div class="import-preview">
-      ${importQueue.map(item => `
-        <div class="preview-row">
-          <span class="preview-status ${item.status === 'ok' ? 'ps-ok' : item.status === 'dup' ? 'ps-dup' : 'ps-err'}"></span>
-          <span class="preview-title">${esc(item.title)}</span>
-          <span class="preview-meta">${item.chRead ? 'Ch.' + item.chRead : ''} ${item.status === 'dup' ? '· SKIP' : item.status === 'err' ? '· ERROR' : '· NEW'}</span>
-        </div>`).join('')}
-    </div>`;
-  const hasNew = importQueue.some(i => i.status === 'ok');
-  document.getElementById('import-footer').style.display = hasNew ? 'flex' : 'none';
+async function raceFetch(url, ms) {
+  ms = ms || 7000;
+  const headers = { 'X-Requested-With': 'XMLHttpRequest' };
+  return new Promise(resolve => {
+    let settled = 0;
+    const attempts = [
+      fetchWithTimeout(url, {}, ms),
+      ...PROXIES.map(p => fetchWithTimeout(p + encodeURIComponent(url), { headers }, ms))
+    ];
+    const total = attempts.length;
+    attempts.forEach(p => p.then(res => {
+      if (res) { resolve(res); }
+      else if (++settled === total) { resolve(null); }
+    }));
+  });
 }
 
-async function doImport() {
-  const toAdd = importQueue.filter(i => i.status === 'ok');
-  if (!toAdd.length) { showToast('Nothing new to import!', 'err'); return; }
-
-  const prog = document.getElementById(currentIETab + '-progress');
-  prog.style.display = 'block';
-  document.getElementById('do-import-btn').disabled = true;
-
-  // Split: items with full data (from JSON export) vs items needing lookup (from paste/CSV)
-  const fullItems = toAdd.filter(i => i.mdId && i.chLatest);
-  const lookupItems = toAdd.filter(i => !i.mdId || !i.chLatest);
-
-  let added = 0;
-
-  // ── Fast path: JSON items with mdId+chLatest — add immediately, fetch missing covers async ──
-  if (fullItems.length) {
-    prog.textContent = `Adding ${fullItems.length} items instantly…`;
-    for (const item of fullItems) {
-      lib.push({
-        id: uid(),
-        title: item.title, mdId: item.mdId || '', cover: item.cover || '',
-        seriesStatus: item.seriesStatus || 'ongoing',
-        type: item.type || 'manga',
-        readingStatus: item.readingStatus || 'reading',
-        chRead: item.chRead || 0, chLatest: item.chLatest || 0,
-        hasNew: (item.chLatest || 0) > (item.chRead || 0),
-        addedAt: Date.now()
-      });
-      added++;
-    }
-    saveLib();
-    renderLib();
-    prog.textContent = `✓ Added ${fullItems.length} from file.`;
-
-    // Fetch covers for any that are missing them, in background
-    const missingCovers = fullItems.filter(i => i.mdId && !i.cover);
-    if (missingCovers.length) {
-      prog.textContent = `Fetching ${missingCovers.length} missing cover images…`;
-      for (const item of missingCovers) {
-        try {
-          const d = await mdFetch(`/manga/${item.mdId}?includes[]=cover_art`);
-          const cover = coverUrl(d.data) || '';
-          if (cover) {
-            const entry = lib.find(m => m.mdId === item.mdId);
-            if (entry) { entry.cover = cover; saveLib(); renderLib(); }
-          }
-        } catch {}
-        await sleep(150);
-      }
-      prog.textContent = `✓ Done! Added ${fullItems.length} manga with covers.`;
-    }
-  }
-
-  // ── Slow path: items needing MangaDex lookup — batch 3 at a time ────────
-  if (lookupItems.length) {
-    const BATCH = 3;
-    for (let i = 0; i < lookupItems.length; i += BATCH) {
-      const batch = lookupItems.slice(i, i + BATCH);
-      prog.textContent = `Looking up ${i+1}–${Math.min(i+BATCH, lookupItems.length)} of ${lookupItems.length}…`;
-      await Promise.all(batch.map(async (item) => {
-        try {
-          const results = await searchMD(item.title);
-          const match = results[0];
-          if (match) {
-            const title = match.attributes.title.en || Object.values(match.attributes.title)[0] || item.title;
-            const mdId = match.id;
-            const type = item.type || mdType(match);
-            const seriesStatus = match.attributes.status || 'ongoing';
-            let cover = coverUrl(match) || '';
-            if (!cover) {
-              try { const d = await mdFetch(`/manga/${mdId}?includes[]=cover_art`); cover = coverUrl(d.data) || ''; } catch {}
-            }
-            const chResult = await getLatestCh(mdId, title, type);
-            const chLatest = chResult?.ch || 0;
-            const chSource = chResult?.source || '';
-            lib.push({ id: uid(), title, mdId, cover, seriesStatus, type, readingStatus: item.readingStatus || 'reading', chRead: item.chRead || 0, chLatest: chLatest || item.chRead || 0, chSource, hasNew: chLatest > (item.chRead||0), addedAt: Date.now() });
-          } else {
-            lib.push({ id: uid(), title: item.title, mdId: '', cover: '', seriesStatus: 'ongoing', type: item.type || 'manga', readingStatus: item.readingStatus || 'reading', chRead: item.chRead || 0, chLatest: item.chLatest || item.chRead || 0, hasNew: false, addedAt: Date.now() });
-          }
-          added++;
-          saveLib();
-        } catch {}
-      }));
-      renderLib();
-      if (i + BATCH < lookupItems.length) await sleep(400);
-    }
-  }
-
-  prog.textContent = `✓ Done! Added ${added} manga.`;
-  renderLib();
-  showToast(`Imported ${added} manga ✓`);
-  document.getElementById('do-import-btn').disabled = false;
-  setTimeout(() => { if (added > 0) closeImport(); }, 1500);
+async function mdFetch(path) {
+  const res = await raceFetch(MD + path, 8000);
+  if (res) return res.json();
+  throw new Error('MangaDex unreachable');
 }
 
-// ── FILE IMPORT ───────────────────────────────────────────────────────────────
-function onDragOver(e) { e.preventDefault(); document.getElementById('drop-zone').classList.add('drag-over'); }
-function onDragLeave(e) { document.getElementById('drop-zone').classList.remove('drag-over'); }
-function onDrop(e) {
-  e.preventDefault();
-  document.getElementById('drop-zone').classList.remove('drag-over');
-  const file = e.dataTransfer.files[0];
-  if (file) processFile(file);
-}
-function onFileSelect(e) { if (e.target.files[0]) processFile(e.target.files[0]); }
-
-function processFile(file) {
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    const content = e.target.result;
-    try {
-      if (file.name.endsWith('.json')) {
-        parseJSONImport(content);
-      } else {
-        parseCSVImport(content);
-      }
-    } catch(err) {
-      showToast('Could not parse file: ' + err.message, 'err');
-    }
-  };
-  reader.readAsText(file);
-}
-
-function parseJSONImport(content) {
-  const data = JSON.parse(content);
-  const items = Array.isArray(data) ? data : data.library || data.lib || [];
-  importQueue = items.map(item => {
-    const title = item.title || item.name || '';
-    if (!title) return null;
-    const existing = lib.find(m => m.title.toLowerCase() === title.toLowerCase());
-    return {
-      title,
-      chRead: parseFloat(item.chRead) || 0,
-      chLatest: parseFloat(item.chLatest) || 0,
-      type: item.type || 'manga',
-      readingStatus: item.readingStatus || 'reading',
-      mdId: item.mdId || '',
-      cover: item.cover || '',           // ← preserve cover from JSON
-      seriesStatus: item.seriesStatus || 'ongoing',
-      status: existing ? 'dup' : 'ok'
-    };
-  }).filter(Boolean);
-  renderImportPreview('file-preview');
-}
-
-function parseCSVImport(content) {
-  const lines = content.trim().split('\n');
-  const header = lines[0].toLowerCase().split(',').map(h => h.trim().replace(/"/g,''));
-  const idx = (name) => header.findIndex(h => h.includes(name));
-  const ti = idx('title'), ci = idx('chread'), li = idx('latest'), tyi = idx('type'), si = idx('status');
-  importQueue = lines.slice(1).map(line => {
-    const cols = line.split(',').map(c => c.trim().replace(/"/g,''));
-    const title = ti >= 0 ? cols[ti] : cols[0];
-    if (!title) return null;
-    const existing = lib.find(m => m.title.toLowerCase() === title.toLowerCase());
-    return {
-      title, chRead: parseFloat(ci >= 0 ? cols[ci] : cols[1]) || 0,
-      chLatest: parseFloat(li >= 0 ? cols[li] : 0) || 0,
-      type: tyi >= 0 ? cols[tyi] : 'manga',
-      readingStatus: si >= 0 ? cols[si] : 'reading',
-      status: existing ? 'dup' : 'ok'
-    };
-  }).filter(Boolean);
-  renderImportPreview('file-preview');
-}
-
-// ── BULK MANGADEX IMPORT ──────────────────────────────────────────────────────
-async function bulkMDImport() {
-  const raw = document.getElementById('bulk-input').value.trim();
-  if (!raw) { showToast('Paste some MangaDex IDs first!', 'err'); return; }
-  const ids = raw.split('\n').map(l => l.trim()).filter(l => l.length > 10);
-  if (!ids.length) { showToast('No valid IDs found', 'err'); return; }
-
-  const prog = document.getElementById('bulk-progress');
-  prog.style.display = 'block';
-  let added = 0;
-
-  for (let i = 0; i < ids.length; i++) {
-    const mdId = ids[i];
-    prog.textContent = `FETCHING ${i+1}/${ids.length}…`;
-    if (lib.find(m => m.mdId === mdId)) { prog.textContent += ' (skip, already exists)'; await sleep(200); continue; }
-    try {
-      const d = await mdFetch(`/manga/${mdId}?includes[]=cover_art`);
-      const manga = d.data;
-      const title = manga.attributes.title.en || Object.values(manga.attributes.title)[0] || mdId;
-      const type = mdType(manga);
-      const cover = coverUrl(manga) || '';
-      const seriesStatus = manga.attributes.status || 'ongoing';
-      const chResult = await getLatestCh(mdId, title, type);
-      const chLatest = chResult?.ch || 0;
-      lib.push({ id: uid(), title, mdId, cover, seriesStatus, type, readingStatus: 'reading', chRead: 0, chLatest, chSource: chResult?.source || '', hasNew: chLatest > 0, addedAt: Date.now() });
-      added++;
-      saveLib();
-    } catch(e) {}
-    await sleep(500);
-  }
-
-  prog.textContent = `✓ Done! Added ${added} manga.`;
-  renderLib();
-  showToast(`Bulk imported ${added} manga ✓`);
-  setTimeout(() => { if (added > 0) closeImport(); }, 1500);
-}
-
-// ── EXPORT ────────────────────────────────────────────────────────────────────
-function exportJSON() {
-  const data = lib.map(m => ({
-    title: m.title, type: m.type, readingStatus: m.readingStatus,
-    chRead: m.chRead || 0, chLatest: m.chLatest || 0,
-    mdId: m.mdId || '', seriesStatus: m.seriesStatus || 'ongoing',
-    cover: m.cover || ''   // always include so re-import has covers instantly
-  }));
-  downloadFile('mangatrack-library.json', JSON.stringify(data, null, 2), 'application/json');
-  showToast('JSON exported ✓');
-}
-
-function exportCSV() {
-  const header = 'title,type,readingStatus,chRead,chLatest,mdId,seriesStatus';
-  const rows = lib.map(m => [m.title, m.type, m.readingStatus, m.chRead||0, m.chLatest||0, m.mdId||'', m.seriesStatus||'ongoing'].map(v => `"${String(v).replace(/"/g,'""')}"`).join(','));
-  downloadFile('mangatrack-library.csv', [header, ...rows].join('\n'), 'text/csv');
-  showToast('CSV exported ✓');
-}
-
-function exportText() {
-  const lines = lib.map(m => `${m.title} (Ch.${m.chRead||0}/${m.chLatest||'?'})`);
-  downloadFile('mangatrack-library.txt', lines.join('\n'), 'text/plain');
-  showToast('Text list exported ✓');
-}
-
-function downloadFile(name, content, mime) {
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([content], { type: mime }));
-  a.download = name;
-  a.click();
-  URL.revokeObjectURL(a.href);
-}
-
-// Close import/export on overlay click
-document.getElementById('import-modal').addEventListener('click', e => { if (e.target===e.currentTarget) closeImport(); });
-document.getElementById('export-modal').addEventListener('click', e => { if (e.target===e.currentTarget) closeExport(); });
-
+// ── COVER URL ─────────────────────────────────────────────────────────────────
 function coverUrl(manga) {
   const rel = (manga.relationships || []).find(r => r.type === 'cover_art');
   if (!rel?.attributes?.fileName) return null;
-  // Use direct URL — MangaDex uploads support CORS
   return `${COVERS}/${manga.id}/${rel.attributes.fileName}.256.jpg`;
 }
 
@@ -796,7 +494,253 @@ function mdType(manga) {
   return 'manga';
 }
 
-// ── RENDER LIBRARY ───────────────────────────────────────────────────────────
+// ── SCRAPE CHAPTER FROM ANY URL ───────────────────────────────────────────────
+async function scrapeChapterFromUrl(url) {
+  const res = await raceFetch(url, 8000);
+  if (!res) return null;
+  const html = await res.text();
+
+  // 1. "New Chapter ... Chapter 51" — arenascan / madara theme
+  const newCh = html.match(/New\s+Chapter[\s\S]{0,60}?(?:Chapter|Ch\.?)\s*([0-9]+(?:\.[0-9]+)?)/i);
+  if (newCh) { const n = parseFloat(newCh[1]); if (n > 0) return n; }
+
+  // 2. Chapter links in the URL slug: /slug-name-51/ or /slug-name-chapter-51/
+  const slugMatch = url.match(/\/(?:manga|comic|series|webtoon)\/([^/]+)\/?$/i);
+  if (slugMatch) {
+    const slug = slugMatch[1];
+    const escaped = slug.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/-/g, '[-_]');
+    const re = new RegExp(escaped + '[-_](?:chapter[-_])?([0-9]+(?:\\.[0-9]+)?)', 'gi');
+    const nums = [...html.matchAll(re)].map(m => parseFloat(m[1])).filter(n => n > 0);
+    if (nums.length) return Math.max(...nums);
+  }
+
+  // 3. Highest "Chapter N" or "Ch. N" in page
+  const all = [...html.matchAll(/(?:chapter|ch\.?)\s*([0-9]+(?:\.[0-9]+)?)/gi)]
+    .map(m => parseFloat(m[1])).filter(n => n > 0 && n < 9999);
+  if (all.length) return Math.max(...all);
+
+  return null;
+}
+
+// ── PREVIEW CUSTOM URL (fires when user types in the field) ───────────────────
+let urlPreviewTimer = null;
+async function previewCustomUrl(val) {
+  const el = document.getElementById('custom-url-preview');
+  if (!el) return;
+  clearTimeout(urlPreviewTimer);
+  if (!val || !val.startsWith('http')) { el.textContent = ''; return; }
+  el.style.color = 'var(--muted)';
+  el.textContent = 'Detecting…';
+  urlPreviewTimer = setTimeout(async () => {
+    const n = await scrapeChapterFromUrl(val);
+    if (n) {
+      el.style.color = 'var(--accent3)';
+      el.textContent = '✓ Detected Ch.' + n + ' from this URL';
+    } else {
+      el.style.color = 'var(--accent)';
+      el.textContent = '✗ Could not detect chapter — try a different page';
+    }
+  }, 800);
+}
+
+// ── GET LATEST CHAPTER ────────────────────────────────────────────────────────
+async function getLatestCh(mdId, customUrl) {
+  const all = await Promise.allSettled([
+
+    // Priority 1: Custom URL — user knows where the chapters live
+    (async () => {
+      if (!customUrl) return null;
+      const n = await scrapeChapterFromUrl(customUrl);
+      return (n > 0) ? { ch: n, source: 'Custom URL', t: 2 } : null;
+    })(),
+
+    // Priority 2a: MangaDex feed — all languages, take highest
+    (async () => {
+      if (!mdId) return null;
+      const d = await mdFetch('/manga/' + mdId + '/feed?limit=500&offset=0&order[chapter]=desc&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic');
+      const nums = (d?.data || []).map(c => parseFloat(c.attributes?.chapter)).filter(n => !isNaN(n) && n > 0);
+      if (!nums.length) return null;
+      if ((d?.total || 0) > 500) {
+        try {
+          const d2 = await mdFetch('/manga/' + mdId + '/feed?limit=500&offset=500&order[chapter]=desc&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic');
+          (d2?.data || []).forEach(c => { const n = parseFloat(c.attributes?.chapter); if (!isNaN(n) && n > 0) nums.push(n); });
+        } catch {}
+      }
+      return { ch: Math.max(...nums), source: 'MangaDex', t: 1 };
+    })(),
+
+    // Priority 2b: MangaDex aggregate — cross-check
+    (async () => {
+      if (!mdId) return null;
+      const d = await mdFetch('/manga/' + mdId + '/aggregate');
+      const nums = [];
+      for (const vol of Object.values(d.volumes || {}))
+        for (const ch of Object.values(vol.chapters || {})) { const n = parseFloat(ch.chapter); if (!isNaN(n) && n > 0) nums.push(n); }
+      return nums.length ? { ch: Math.max(...nums), source: 'MangaDex', t: 1 } : null;
+    })(),
+
+  ]);
+
+  const results = all.filter(r => r.status === 'fulfilled' && r.value?.ch > 0).map(r => r.value);
+  if (!results.length) return null;
+  // Highest tier wins; within same tier, highest chapter wins
+  return results.reduce((a, b) => b.t > a.t ? b : a.t > b.t ? a : b.ch > a.ch ? b : a);
+}
+
+// ── DEBUG SOURCES ─────────────────────────────────────────────────────────────
+async function debugSources(id) {
+  const m = lib.find(x => x.id === id);
+  if (!m) return;
+  const modal = document.getElementById('debug-modal');
+  const body = document.getElementById('debug-body');
+  const title = m.title.length > 22 ? m.title.slice(0, 22) + '…' : m.title;
+  document.getElementById('debug-title').textContent = title;
+  modal.classList.add('open');
+
+  const rows = [
+    { key: 'custom',  label: 'Custom URL', sub: m.customUrl ? m.customUrl.replace(/https?:\/\//,'').slice(0,28) + (m.customUrl.length > 28 ? '…' : '') : 'not set', skip: !m.customUrl },
+    { key: 'md-feed', label: 'MangaDex Feed',      skip: !m.mdId },
+    { key: 'md-agg',  label: 'MangaDex Aggregate', skip: !m.mdId },
+  ];
+
+  body.innerHTML = `
+    <div style="font-size:9px;color:var(--muted);letter-spacing:.5px;line-height:2;padding:2px 0 6px">
+      ${m.mdId ? 'ID: <span style="opacity:.5">' + m.mdId + '</span><br>' : ''}
+      Stored: <strong style="color:var(--text)">Ch.${m.chLatest || '?'}</strong> &middot; via <span style="color:var(--accent3)">${m.chSource || 'none'}</span>
+    </div>
+    ${rows.map(r => `
+    <div id="dbg-${r.key}" style="display:flex;justify-content:space-between;align-items:center;padding:9px 12px;background:var(--surface);border:1px solid var(--border);border-left:3px solid ${r.skip ? '#333' : 'var(--muted)'};opacity:${r.skip ? '.35' : '1'}">
+      <div>
+        <div style="font-size:9px;color:var(--muted);letter-spacing:1px;text-transform:uppercase">${r.label}</div>
+        ${r.sub ? '<div style="font-size:8px;color:var(--muted);opacity:.6;margin-top:2px">' + esc(r.sub) + '</div>' : ''}
+      </div>
+      <span id="dbg-val-${r.key}" style="font-size:9px;color:var(--muted)">${r.skip ? 'skipped' : '…'}</span>
+    </div>`).join('')}
+    <div id="dbg-best" style="display:none;padding:10px 12px;background:var(--card);border:1px solid var(--accent3);text-align:center;margin-top:4px"></div>`;
+
+  let best = 0;
+  function update(key, ch) {
+    const row = document.getElementById('dbg-' + key);
+    const val = document.getElementById('dbg-val-' + key);
+    if (!row || !val) return;
+    if (ch > 0) {
+      row.style.borderLeftColor = 'var(--accent3)';
+      val.style.cssText = 'font-size:15px;font-weight:700;color:var(--accent3)';
+      val.textContent = 'Ch.' + ch;
+      if (ch > best) {
+        best = ch;
+        const el = document.getElementById('dbg-best');
+        el.style.display = 'block';
+        el.innerHTML = '<span style="color:var(--muted);font-size:9px;letter-spacing:2px">BEST </span><strong style="color:var(--accent3);font-size:22px"> Ch.' + best + '</strong>';
+      }
+    } else {
+      row.style.borderLeftColor = 'var(--accent)';
+      val.style.cssText = 'font-size:13px;color:var(--accent)';
+      val.textContent = '—';
+    }
+  }
+
+  if (m.customUrl) {
+    raceFetch(m.customUrl).then(async res => {
+      if (!res) { update('custom', 0); return; }
+      const html = await res.text();
+      const n = await scrapeChapterFromUrl(m.customUrl).catch(() => null);
+      update('custom', n || 0);
+    }).catch(() => update('custom', 0));
+  }
+
+  if (m.mdId) {
+    raceFetch(MD + '/manga/' + m.mdId + '/feed?limit=500&order[chapter]=desc&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic').then(async res => {
+      try {
+        const d = await res.json();
+        const nums = (d?.data || []).map(c => parseFloat(c.attributes?.chapter)).filter(n => !isNaN(n) && n > 0);
+        update('md-feed', nums.length ? Math.max(...nums) : 0);
+      } catch { update('md-feed', 0); }
+    }).catch(() => update('md-feed', 0));
+
+    raceFetch(MD + '/manga/' + m.mdId + '/aggregate').then(async res => {
+      try {
+        const d = await res.json();
+        const nums = [];
+        for (const vol of Object.values(d.volumes || {}))
+          for (const ch of Object.values(vol.chapters || {})) { const n = parseFloat(ch.chapter); if (!isNaN(n) && n > 0) nums.push(n); }
+        update('md-agg', nums.length ? Math.max(...nums) : 0);
+      } catch { update('md-agg', 0); }
+    }).catch(() => update('md-agg', 0));
+  }
+}
+
+// ── REFRESH SINGLE MANGA ──────────────────────────────────────────────────────
+async function refreshOne(id) {
+  const m = lib.find(x => x.id === id);
+  if (!m) return;
+  showToast('Refreshing ' + m.title + '…');
+  try {
+    const r = await getLatestCh(m.mdId, m.customUrl || '');
+    if (r && r.ch > 0) {
+      const old = m.chLatest || 0;
+      m.chSource = r.source;
+      m.chLatest = r.ch;
+      m.hasNew = m.chLatest > (m.chRead || 0);
+      if (r.ch > old && old > 0) {
+        updLog.unshift({ id: uid(), mangaId: m.id, title: m.title, type: m.type, oldCh: old, newCh: r.ch, source: r.source, cover: m.cover || '', time: Date.now(), read: false });
+        saveLog();
+      }
+      saveLib(); renderLib();
+      showToast(m.title + ' → Ch.' + r.ch + ' ✓');
+    } else {
+      showToast('Could not fetch chapters', 'err');
+    }
+  } catch(e) { showToast('Error: ' + e.message, 'err'); }
+}
+
+// ── CHECK ALL UPDATES ─────────────────────────────────────────────────────────
+async function checkAllUpdates() {
+  const tracked = lib.filter(m => m.mdId || m.customUrl);
+  if (!tracked.length) {
+    showToast('Add manga with a MangaDex ID or Custom URL first!', 'err');
+    return;
+  }
+  const btn = document.getElementById('checkBtn');
+  btn.classList.add('spinning');
+  btn.disabled = true;
+  let found = 0, done = 0;
+  showToast('Checking ' + tracked.length + ' manga…');
+
+  await Promise.allSettled(tracked.map(async m => {
+    try {
+      const r = await getLatestCh(m.mdId, m.customUrl || '');
+      if (r && r.ch > 0) {
+        m.chSource = r.source;
+        const prev = m.chLatest || 0;
+        m.chLatest = Math.max(prev, r.ch);
+        m.hasNew = m.chLatest > (m.chRead || 0);
+        if (r.ch > prev) {
+          found++;
+          updLog.unshift({ id: uid(), mangaId: m.id, title: m.title, type: m.type, oldCh: prev, newCh: r.ch, source: r.source, cover: m.cover || '', time: Date.now(), read: false });
+        }
+        saveLib(); renderLib();
+      }
+    } catch {}
+    done++;
+    showToast('Checked ' + done + '/' + tracked.length + '…');
+  }));
+
+  updLog = updLog.slice(0, 100);
+  saveLib(); saveLog(); renderLib(); renderLog();
+  btn.classList.remove('spinning');
+  btn.disabled = false;
+  if (found > 0) showToast('🎉 ' + found + ' new update' + (found > 1 ? 's' : '') + '!');
+  else showToast('All up to date ✓');
+}
+
+// ── MANGADEX SEARCH ───────────────────────────────────────────────────────────
+async function searchMD(title) {
+  const d = await mdFetch('/manga?title=' + encodeURIComponent(title) + '&limit=8&includes[]=cover_art&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic');
+  return d.data || [];
+}
+
+// ── RENDER ────────────────────────────────────────────────────────────────────
 function renderLib() {
   const grid = document.getElementById('grid');
   const q = document.getElementById('q').value.toLowerCase();
@@ -811,49 +755,41 @@ function renderLib() {
   }).sort((a, b) => (b.hasNew - a.hasNew) || (b.addedAt - a.addedAt));
 
   if (!items.length) {
-    grid.innerHTML = `<div class="empty">
-      <div class="empty-icon">📚</div>
-      <div class="empty-title">${lib.length ? 'No Results' : 'Empty Library'}</div>
-      <div class="empty-sub">${lib.length ? 'Try different filters' : 'Click + ADD and search for manga'}</div>
-    </div>`;
+    grid.innerHTML = '<div class="empty"><div class="empty-icon">📚</div><div class="empty-title">' + (lib.length ? 'No Results' : 'Empty Library') + '</div><div class="empty-sub">' + (lib.length ? 'Try different filters' : 'Click + ADD and search for manga') + '</div></div>';
     return updateStats();
   }
 
   grid.innerHTML = items.map(m => {
-    const hasNew = m.hasNew && (m.chLatest > 0) && ((m.chLatest || 0) > (m.chRead || 0));
+    const hasNew = m.hasNew && (m.chLatest > 0) && (m.chLatest > (m.chRead || 0));
     const ss = m.seriesStatus || 'ongoing';
-    const rlabel = {reading:'Reading',completed:'Completed','on-hold':'On Hold',dropped:'Dropped',plan:'Plan to Read'}[m.readingStatus] || m.readingStatus;
-    const slabel = {ongoing:'Ongoing',completed:'Completed',hiatus:'Hiatus',cancelled:'Cancelled'}[ss] || ss;
-    return `<div class="card${hasNew?' has-new':''}" id="card-${m.id}">
-      ${hasNew ? '<div class="new-pill">New Ch.</div>' : ''}
-      ${m.cover ? `<img class="card-cover" src="${esc(m.cover)}" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" alt="">` : ''}
-      <div class="cover-ph"${m.cover ? ' style="display:none"' : ''}>${m.title.charAt(0).toUpperCase()}</div>
-      <div class="card-body">
-        <div class="card-type type-${m.type}">${m.type.toUpperCase()}</div>
-        <div class="card-title">${esc(m.title)}</div>
-        <div class="card-meta">
-          <div class="card-meta-top">
-            <div>
-              <div class="ch-read">Read: Ch.${m.chRead || 0}</div>
-              <div class="ch-latest${hasNew?' new':''}">Latest: ${m.chLatest > 0 ? 'Ch.'+m.chLatest : '?'}${hasNew?' ↑':''}</div>
-            </div>
-          </div>
-          <div class="card-actions">
-            <button class="icon-btn" title="Mark chapter read" onclick="markRead('${m.id}')">✓</button>
-            <button class="icon-btn" title="Refresh this manga" onclick="refreshOne('${m.id}')">↻</button>
-            <button class="icon-btn" title="Debug sources" onclick="debugSources('${m.id}')">🔍</button>
-            <button class="icon-btn" title="Edit" onclick="openEdit('${m.id}')">✎</button>
-            <button class="icon-btn del" title="Remove" onclick="del('${m.id}')">✕</button>
-          </div>
-        </div>
-        <div class="card-foot"><span class="dot ${ss}"></span>${slabel} · ${rlabel}</div>
-        <div class="card-source">
-          ${m.chSource ? `📡 <span style="color:var(--accent3);opacity:.9">${esc(m.chSource)}</span>` : m.mdId ? `MDex: ${m.mdId.slice(0,14)}…` : '<span style="color:var(--accent);opacity:.7">⚠ No MangaDex ID</span>'}
-        </div>
-      </div>
-    </div>`;
+    const rlabel = { reading:'Reading', completed:'Completed', 'on-hold':'On Hold', dropped:'Dropped', plan:'Plan to Read' }[m.readingStatus] || m.readingStatus;
+    const slabel = { ongoing:'Ongoing', completed:'Completed', hiatus:'Hiatus', cancelled:'Cancelled' }[ss] || ss;
+    const srcBadge = m.customUrl ? '<span style="color:var(--accent2);font-size:8px">⚡ ' + esc(m.chSource || 'Custom') + '</span>' : m.chSource ? '<span style="color:var(--accent3);opacity:.7;font-size:8px">' + esc(m.chSource) + '</span>' : m.mdId ? '<span style="opacity:.3;font-size:8px">MangaDex</span>' : '<span style="color:var(--accent);opacity:.6;font-size:8px">⚠ no source</span>';
+    return '<div class="card' + (hasNew ? ' has-new' : '') + '" id="card-' + m.id + '">' +
+      (hasNew ? '<div class="new-pill">New Ch.</div>' : '') +
+      (m.cover ? '<img class="card-cover" src="' + esc(m.cover) + '" loading="lazy" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'" alt="">' : '') +
+      '<div class="cover-ph"' + (m.cover ? ' style="display:none"' : '') + '>' + m.title.charAt(0).toUpperCase() + '</div>' +
+      '<div class="card-body">' +
+        '<div class="card-type type-' + m.type + '">' + m.type.toUpperCase() + '</div>' +
+        '<div class="card-title">' + esc(m.title) + '</div>' +
+        '<div class="card-meta">' +
+          '<div>' +
+            '<div class="ch-read">Read: Ch.' + (m.chRead || 0) + '</div>' +
+            '<div class="ch-latest' + (hasNew ? ' new' : '') + '">Latest: ' + (m.chLatest > 0 ? 'Ch.' + m.chLatest : '?') + (hasNew ? ' ↑' : '') + '</div>' +
+          '</div>' +
+          '<div class="card-actions">' +
+            '<button class="icon-btn" title="Mark as read" onclick="markRead(\'' + m.id + '\')">✓</button>' +
+            '<button class="icon-btn" title="Refresh" onclick="refreshOne(\'' + m.id + '\')">↻</button>' +
+            '<button class="icon-btn" title="Debug sources" onclick="debugSources(\'' + m.id + '\')">⚑</button>' +
+            '<button class="icon-btn" title="Edit" onclick="openEdit(\'' + m.id + '\')">✎</button>' +
+            '<button class="icon-btn del" title="Remove" onclick="del(\'' + m.id + '\')">✕</button>' +
+          '</div>' +
+        '</div>' +
+        '<div class="card-foot"><span class="dot ' + ss + '"></span>' + slabel + ' · ' + rlabel + '</div>' +
+        '<div class="card-source">' + srcBadge + '</div>' +
+      '</div>' +
+    '</div>';
   }).join('');
-
   updateStats();
 }
 
@@ -868,28 +804,20 @@ function updateStats() {
   badge.textContent = unread;
 }
 
-// ── RENDER UPDATES ────────────────────────────────────────────────────────────
 function renderLog() {
   const list = document.getElementById('log-list');
   if (!updLog.length) {
-    list.innerHTML = `<div class="empty" style="padding:60px 0">
-      <div class="empty-icon">🔔</div>
-      <div class="empty-title">No Updates Yet</div>
-      <div class="empty-sub">Click "Check Updates" to fetch real data</div>
-    </div>`;
+    list.innerHTML = '<div class="empty" style="padding:60px 0"><div class="empty-icon">🔔</div><div class="empty-title">No Updates Yet</div><div class="empty-sub">Click Check Updates to fetch real data</div></div>';
     return;
   }
-  list.innerHTML = [...updLog].sort((a,b)=>b.time-a.time).map(u => `
-    <div class="log-entry${u.read?'':' unread'}">
-      ${u.cover
-        ? `<img class="log-cover" src="${esc(u.cover)}" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" alt=""><div class="log-cover-ph" style="display:none">${u.title.charAt(0)}</div>`
-        : `<div class="log-cover-ph">${u.title.charAt(0)}</div>`}
-      <div class="log-info">
-        <div class="log-title-txt">${esc(u.title)}</div>
-        <div class="log-ch">Ch.${u.oldCh} → Ch.${u.newCh} <span style="color:var(--muted);font-size:9px">(+${(u.newCh-u.oldCh).toFixed(1).replace(/\.0$/,'')})</span>${u.source ? ` <span style="color:var(--accent3);font-size:9px">· ${esc(u.source)}</span>` : ''}</div>
-      </div>
-      <div class="log-time">${timeAgo(u.time)}</div>
-    </div>`).join('');
+  list.innerHTML = [...updLog].sort((a,b)=>b.time-a.time).map(u =>
+    '<div class="log-entry' + (u.read ? '' : ' unread') + '">' +
+    (u.cover ? '<img class="log-cover" src="' + esc(u.cover) + '" loading="lazy" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'" alt=""><div class="log-cover-ph" style="display:none">' + u.title.charAt(0) + '</div>' : '<div class="log-cover-ph">' + u.title.charAt(0) + '</div>') +
+    '<div class="log-info"><div class="log-title-txt">' + esc(u.title) + '</div>' +
+    '<div class="log-ch">Ch.' + u.oldCh + ' → Ch.' + u.newCh + ' <span style="color:var(--muted);font-size:9px">(+' + (u.newCh - u.oldCh).toFixed(1).replace(/\.0$/, '') + ')</span>' +
+    (u.source ? ' <span style="color:var(--accent3);font-size:9px">· ' + esc(u.source) + '</span>' : '') + '</div></div>' +
+    '<div class="log-time">' + timeAgo(u.time) + '</div></div>'
+  ).join('');
 }
 
 function timeAgo(ts) {
@@ -901,284 +829,16 @@ function timeAgo(ts) {
   return Math.floor(h/24) + 'd ago';
 }
 
-// ── FETCH HELPERS ─────────────────────────────────────────────────────────────
-// Race a fetch against a timeout — always resolves, never hangs
-function fetchWithTimeout(url, opts, ms) {
-  return new Promise(resolve => {
-    const timer = setTimeout(() => resolve(null), ms);
-    fetch(url, opts).then(res => {
-      clearTimeout(timer);
-      resolve(res.ok ? res : null);
-    }).catch(() => {
-      clearTimeout(timer);
-      resolve(null);
-    });
-  });
-}
-
-// Try direct + all proxies simultaneously — first OK response wins
-async function raceFetch(url, ms = 7000) {
-  const opts = { headers: { 'X-Requested-With': 'XMLHttpRequest' } };
-  const attempts = [
-    fetchWithTimeout(url, {}, ms),
-    ...PROXIES.map(p => fetchWithTimeout(p + encodeURIComponent(url), opts, ms))
-  ];
-  // Return first non-null result
-  return new Promise(resolve => {
-    let done = 0;
-    attempts.forEach(p => p.then(res => {
-      if (res) resolve(res);
-      else if (++done === attempts.length) resolve(null);
-    }));
-  });
-}
-
-async function mdFetch(path) {
-  const res = await raceFetch(MD + path, 8000);
-  if (res) return res.json();
-  throw new Error('MangaDex unreachable: ' + path);
-}
-
-async function pFetch(url, ms = 7000) {
-  const res = await raceFetch(url, ms);
-  return res || { ok: false };
-}
-
-async function dFetch(url, opts = {}, ms = 7000) {
-  // For non-GET requests (POST) just try direct then proxies sequentially
-  if (opts.method && opts.method !== 'GET') {
-    const direct = await fetchWithTimeout(url, opts, ms);
-    if (direct) return direct;
-    return { ok: false };
-  }
-  const res = await raceFetch(url, ms);
-  return res || { ok: false };
-}
-const norm = s => String(s).toLowerCase().replace(/[^a-z0-9]/g, '');
-
-function titleSim(a, b) {
-  const na = norm(a), nb = norm(b);
-  if (!na || !nb) return 0;
-  if (na === nb) return 1;
-  if (nb.includes(na) || na.includes(nb)) return 0.9;
-  let match = 0;
-  for (let i = 0; i < Math.min(na.length, nb.length); i++) if (na[i] === nb[i]) match++;
-  return match / Math.max(na.length, nb.length);
-}
-
-// ── GET LATEST CHAPTER ────────────────────────────────────────────────────────
-// MangaDex is the PRIMARY and most reliable source. We query it via multiple
-// endpoints (feed + aggregate) to get the true highest chapter across ALL
-// languages/translations. ComicK (UUID-based) is secondary. Title-search
-// sources (MangaUpdates, AniList) are last-resort only.
-async function getLatestCh(mdId, title = '', type = '', customUrl = '') {
-
-  const all = await Promise.allSettled([
-
-    // 0. Custom URL — user-specified page, scrape highest chapter number from it
-    (async () => {
-      if (!customUrl) return null;
-      const res = await raceFetch(customUrl, 8000);
-      if (!res) return null;
-      const html = await res.text();
-      // Try multiple patterns: "Chapter 51", "Chapters 51", "Ch. 51", "51 chapters"
-      const patterns = [
-        /chapter[s]?\s+(\d+)/i,
-        /ch\.\s*(\d+)/i,
-        /(\d+)\s+chapter/i,
-        /"chapter"\s*:\s*"?(\d+)/i,
-      ];
-      for (const p of patterns) {
-        const m = html.match(p);
-        if (m) { const n = parseInt(m[1]); if (n > 0) return { ch: n, source: 'Custom URL', t: 1 }; }
-      }
-      // Last resort: find all standalone numbers and take the highest reasonable one
-      const nums = [...html.matchAll(/\b(\d{1,4})\b/g)]
-        .map(m => parseInt(m[1]))
-        .filter(n => n > 0 && n < 9999);
-      return null; // don't guess from random numbers
-    })(),
-    //    This is the ground truth: actual uploaded chapters on MangaDex.
-    //    We fetch multiple pages to find the absolute highest chapter number.
-    (async () => {
-      // First page (sorted desc) gives the newest chapters
-      const url = `/manga/${mdId}/feed?limit=500&offset=0&order[chapter]=desc` +
-        `&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic` +
-        `&includes[]=scanlation_group`;
-      const d = await mdFetch(url);
-      const nums = (d?.data || []).map(c => parseFloat(c.attributes?.chapter)).filter(n => !isNaN(n) && n > 0);
-      if (!nums.length) return null;
-      // Also check total — if more pages exist, fetch p2 to be safe
-      const total = d?.total || 0;
-      if (total > 500) {
-        try {
-          const d2 = await mdFetch(`/manga/${mdId}/feed?limit=500&offset=500&order[chapter]=desc` +
-            `&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic`);
-          const n2 = (d2?.data || []).map(c => parseFloat(c.attributes?.chapter)).filter(n => !isNaN(n) && n > 0);
-          nums.push(...n2);
-        } catch {}
-      }
-      return { ch: Math.max(...nums), source: 'MangaDex', t: 1 };
-    })(),
-
-    // 2. MangaDex aggregate — reliable chapter list per volume/chapter grouping
-    (async () => {
-      const d = await mdFetch(`/manga/${mdId}/aggregate`);
-      const nums = [];
-      for (const vol of Object.values(d.volumes || {}))
-        for (const ch of Object.values(vol.chapters || {})) {
-          const n = parseFloat(ch.chapter); if (!isNaN(n) && n > 0) nums.push(n);
-        }
-      return nums.length ? { ch: Math.max(...nums), source: 'MangaDex (agg)', t: 1 } : null;
-    })(),
-
-    // 3. ComicK by MangaDex UUID — very up-to-date, especially for manhwa/manhua
-    (async () => {
-      const ir = await pFetch(`${COMICK}/comic/${mdId}`, 6000);
-      if (!ir.ok) return null;
-      const info = await ir.json();
-      const slug = info?.comic?.slug || info?.slug;
-      if (!slug) return null;
-      const cr = await pFetch(`${COMICK}/comic/${slug}/chapters?limit=1&page=1&chap-order=desc`, 6000);
-      if (!cr.ok) return null;
-      const cd = await cr.json();
-      const n = parseFloat(cd?.chapters?.[0]?.chap);
-      return (!isNaN(n) && n > 0) ? { ch: n, source: 'ComicK', t: 1 } : null;
-    })(),
-
-    // 4. MangaDex lastChapter field — LAST resort among trusted (often stale)
-    (async () => {
-      const d = await mdFetch(`/manga/${mdId}`);
-      const n = parseFloat(d.data?.attributes?.lastChapter);
-      return (!isNaN(n) && n > 0) ? { ch: n, source: 'MangaDex (meta)', t: 1 } : null;
-    })(),
-
-    // ── UNTRUSTED (title-search, strict similarity required) ─────────────────
-
-    // 5. Rinko Comics — scrape chapter count from comic page HTML
-    //    Works for manhwa hosted exclusively on rinkocomics.com
-    //    URL pattern: rinkocomics.com/comic/{slug}/
-    (async () => {
-      if (!title) return null;
-      // Build slug from title: lowercase, replace spaces/special chars with hyphens
-      const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-      const url = `https://rinkocomics.com/comic/${slug}/`;
-      const res = await dFetch(url, {}, 8000);
-      if (!res.ok) return null;
-      const html = await res.text();
-      // Page contains "Chapters 51" or similar in the metadata
-      const m = html.match(/Chapters\s+(\d+)/i);
-      if (!m) return null;
-      const n = parseInt(m[1]);
-      return (!isNaN(n) && n > 0) ? { ch: n, source: 'Rinko Comics', t: 1 } : null;
-    })(),
-    (async () => {
-      if (!title) return null;
-      const sr = await pFetch(`${COMICK}/v1.0/search?q=${encodeURIComponent(title)}&limit=10`, 6000);
-      if (!sr.ok) return null;
-      const results = await sr.json();
-      const best = (results || [])
-        .map(r => ({ r, sim: titleSim(title, r.title || '') }))
-        .filter(x => x.sim >= 0.7).sort((a, b) => b.sim - a.sim)[0]?.r;
-      if (!best?.slug) return null;
-      const cr = await pFetch(`${COMICK}/comic/${best.slug}/chapters?limit=1&page=1&chap-order=desc`, 6000);
-      if (!cr.ok) return null;
-      const cd = await cr.json();
-      const n = parseFloat(cd?.chapters?.[0]?.chap);
-      return (!isNaN(n) && n > 0) ? { ch: n, source: 'ComicK (search)', t: 0 } : null;
-    })(),
-
-    // 6. AniList — ONLY for FINISHED series (ongoing = null chapters field)
-    (async () => {
-      if (!title) return null;
-      const r = await dFetch(ANILIST, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          query: `query($s:String){Media(search:$s,type:MANGA){chapters status title{romaji english}}}`,
-          variables: { s: title }
-        })
-      }, 5000);
-      if (!r.ok) return null;
-      const d = await r.json();
-      const media = d?.data?.Media;
-      if (media?.status !== 'FINISHED') return null;
-      const alTitle = media?.title?.romaji || media?.title?.english || '';
-      if (titleSim(title, alTitle) < 0.7) return null;
-      const n = parseFloat(media?.chapters);
-      return (!isNaN(n) && n > 0) ? { ch: n, source: 'AniList', t: 0 } : null;
-    })(),
-  ]);
-
-  const results = all
-    .filter(r => r.status === 'fulfilled' && r.value?.ch > 0)
-    .map(r => r.value);
-
-  if (!results.length) return null;
-
-  // Among trusted UUID-exact sources, take the HIGHEST (not just any one)
-  const trusted = results.filter(r => r.t === 1);
-  if (trusted.length) return trusted.reduce((a, b) => b.ch > a.ch ? b : a);
-
-  // All UUID sources failed — use best title-search result
-  return results.reduce((a, b) => b.ch > a.ch ? b : a);
-}
-
-// ── CHECK UPDATES — all manga fire in parallel, UI updates as each resolves ──
-async function checkAllUpdates() {
-  const tracked = lib.filter(m => m.mdId);
-  if (!tracked.length) {
-    showToast('Add manga using Search to get MangaDex IDs for live updates!', 'err');
-    return;
-  }
-
-  const btn = document.getElementById('checkBtn');
-  btn.classList.add('spinning');
-  btn.disabled = true;
-  let found = 0, done = 0;
-  const total = tracked.length;
-
-  showToast(`Checking ${total} manga via MangaDex…`);
-
-  // Fire ALL simultaneously — each card updates the instant its fetch completes
-  await Promise.allSettled(tracked.map(async (m) => {
-    try {
-      const r = await getLatestCh(m.mdId, m.title, m.type, m.customUrl || '');
-      if (r && r.ch > 0) {
-        m.chSource = r.source;
-        if (r.ch > (m.chLatest || 0)) {
-          const old = m.chLatest || 0;
-          m.chLatest = r.ch; m.hasNew = true; found++;
-          updLog.unshift({ id: uid(), mangaId: m.id, title: m.title, type: m.type, oldCh: old, newCh: r.ch, source: r.source, cover: m.cover || '', time: Date.now(), read: false });
-        } else {
-          m.chLatest = Math.max(m.chLatest || 0, r.ch);
-        }
-        saveLib(); renderLib();
-      }
-    } catch {}
-    done++;
-    showToast(`Checked ${done}/${total}…`);
-  }));
-
-  updLog = updLog.slice(0, 100);
-  saveLib(); saveLog(); renderLib(); renderLog();
-  btn.classList.remove('spinning');
-  btn.disabled = false;
-
-  if (found > 0) showToast(`🎉 ${found} new update${found > 1 ? 's' : ''} found!`);
-  else showToast('All up to date ✓');
-}
-
 // ── ACTIONS ───────────────────────────────────────────────────────────────────
 function markRead(id) {
   const m = lib.find(x => x.id === id);
   if (!m) return;
   if (m.chLatest > 0 && m.chLatest > (m.chRead || 0)) {
-    m.chRead = m.chLatest;
-    m.hasNew = false;
+    m.chRead = m.chLatest; m.hasNew = false;
     saveLib(); renderLib();
-    showToast(`Marked Ch.${m.chLatest} as read ✓`);
+    showToast('Marked Ch.' + m.chLatest + ' as read ✓');
   } else if (!m.chLatest) {
-    showToast('Latest chapter unknown — hit Check Updates first', 'err');
+    showToast('Hit Refresh or Check Updates first', 'err');
   } else {
     showToast('Already up to date!');
   }
@@ -1201,9 +861,9 @@ function markAllRead() {
 // ── TABS ──────────────────────────────────────────────────────────────────────
 function switchTab(name) {
   ['lib','upd'].forEach(t => document.getElementById('tab-'+t).classList.remove('active'));
-  document.getElementById('tab-' + (name==='library'?'lib':'upd')).classList.add('active');
-  document.getElementById('panel-library').style.display = name==='library' ? 'block' : 'none';
-  document.getElementById('panel-updates').classList.toggle('active', name==='updates');
+  document.getElementById('tab-' + (name === 'library' ? 'lib' : 'upd')).classList.add('active');
+  document.getElementById('panel-library').style.display = name === 'library' ? 'block' : 'none';
+  document.getElementById('panel-updates').classList.toggle('active', name === 'updates');
   if (name === 'updates') renderLog();
 }
 
@@ -1227,13 +887,13 @@ function openEdit(id) {
   document.getElementById('f-rstatus').value = m.readingStatus;
   document.getElementById('f-chread').value = m.chRead || '';
   document.getElementById('f-chlatest').value = m.chLatest || 0;
-  const disp = document.getElementById('f-chlatest-display');
-  if (disp) {
-    disp.textContent = m.chLatest > 0 ? `Ch.${m.chLatest}${m.chSource ? '  ('+m.chSource+')' : ''}` : 'Not fetched yet';
-    disp.style.color = m.chLatest > 0 ? 'var(--accent3)' : 'var(--muted)';
-  }
   document.getElementById('f-mdid').value = m.mdId || '';
   document.getElementById('f-customurl').value = m.customUrl || '';
+  const disp = document.getElementById('f-chlatest-display');
+  if (disp) {
+    disp.textContent = m.chLatest > 0 ? 'Ch.' + m.chLatest + (m.chSource ? '  (' + m.chSource + ')' : '') : 'Not fetched yet';
+    disp.style.color = m.chLatest > 0 ? 'var(--accent3)' : 'var(--muted)';
+  }
   document.getElementById('modal').classList.add('open');
 }
 
@@ -1255,9 +915,43 @@ function clearForm() {
   document.getElementById('f-rstatus').value = 'reading';
   const r = document.getElementById('md-results');
   r.classList.remove('open'); r.innerHTML = '';
+  const prev = document.getElementById('custom-url-preview');
+  if (prev) prev.textContent = '';
 }
 
-// ── MANGADEX LIVE SEARCH IN MODAL ────────────────────────────────────────────
+async function save() {
+  const title = document.getElementById('f-title').value.trim();
+  if (!title) { showToast('Title is required!', 'err'); return; }
+  const mdId = document.getElementById('f-mdid').value.trim();
+  const customUrl = document.getElementById('f-customurl').value.trim();
+  const chRead = parseFloat(document.getElementById('f-chread').value) || 0;
+  const chLatest = parseFloat(document.getElementById('f-chlatest').value) || 0;
+
+  if (editId) {
+    const m = lib.find(x => x.id === editId);
+    m.title = title; m.mdId = mdId; m.customUrl = customUrl;
+    m.type = document.getElementById('f-type').value;
+    m.readingStatus = document.getElementById('f-rstatus').value;
+    m.chRead = chRead;
+    if (chLatest > 0) m.chLatest = Math.max(chLatest, m.chLatest || 0);
+    m.hasNew = (m.chLatest || 0) > m.chRead;
+    showToast('Saved ✓');
+  } else {
+    let cover = '', seriesStatus = 'ongoing';
+    if (mdId) {
+      try {
+        const d = await mdFetch('/manga/' + mdId + '?includes[]=cover_art');
+        cover = coverUrl(d.data) || '';
+        seriesStatus = d.data?.attributes?.status || 'ongoing';
+      } catch {}
+    }
+    lib.push({ id: uid(), title, mdId, customUrl, cover, seriesStatus, type: document.getElementById('f-type').value, readingStatus: document.getElementById('f-rstatus').value, chRead, chLatest, hasNew: chLatest > chRead && chLatest > 0, addedAt: Date.now() });
+    showToast('"' + title + '" added! ✓');
+  }
+  saveLib(); closeModal(); renderLib();
+}
+
+// ── MANGADEX LIVE SEARCH ──────────────────────────────────────────────────────
 function onMDSearch(e) {
   clearTimeout(mdTimer);
   const val = e.target.value.trim();
@@ -1268,29 +962,18 @@ function onMDSearch(e) {
   mdTimer = setTimeout(async () => {
     try {
       const data = await searchMD(val);
-      if (!data.length) {
-        results.innerHTML = '<div class="sr-msg">No results found</div>';
-        return;
-      }
+      if (!data.length) { results.innerHTML = '<div class="sr-msg">No results found</div>'; return; }
       results.innerHTML = data.map(m => {
         const title = m.attributes.title.en || Object.values(m.attributes.title)[0] || 'Unknown';
         const type = mdType(m);
         const status = m.attributes.status || 'ongoing';
         const cover = coverUrl(m);
-        const lastCh = m.attributes.lastChapter;
-        // Encode info as a JSON data attribute
-        const info = JSON.stringify({ id: m.id, title, type, status, cover: cover||'', lastCh: lastCh||'' });
-        return `<div class="sr-item" onclick='selectMD(${info.replace(/'/g,"&#39;")})'>
-          ${cover ? `<img class="sr-thumb" src="${esc(cover)}" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" alt=""><div class="sr-ph" style="display:none">${title.charAt(0)}</div>` : `<div class="sr-ph">${title.charAt(0)}</div>`}
-          <div class="sr-info">
-            <div class="sr-name">${esc(title)}</div>
-            <div class="sr-meta">${type} · ${status}${lastCh ? ' · Ch.'+lastCh : ''}</div>
-          </div>
-        </div>`;
+        const info = JSON.stringify({ id: m.id, title, type, status, cover: cover||'' });
+        return '<div class="sr-item" onclick=\'selectMD(' + info.replace(/'/g,"&#39;") + ')\'>' +
+          (cover ? '<img class="sr-thumb" src="' + esc(cover) + '" loading="lazy" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'" alt=""><div class="sr-ph" style="display:none">' + title.charAt(0) + '</div>' : '<div class="sr-ph">' + title.charAt(0) + '</div>') +
+          '<div class="sr-info"><div class="sr-name">' + esc(title) + '</div><div class="sr-meta">' + type + ' · ' + status + '</div></div></div>';
       }).join('');
-    } catch(err) {
-      results.innerHTML = `<div class="sr-msg">Error: ${esc(err.message)}</div>`;
-    }
+    } catch(err) { results.innerHTML = '<div class="sr-msg">Error: ' + esc(err.message) + '</div>'; }
   }, 600);
 }
 
@@ -1298,249 +981,242 @@ async function selectMD(info) {
   document.getElementById('f-title').value = info.title;
   document.getElementById('f-type').value = info.type;
   document.getElementById('f-mdid').value = info.id;
-  // Clear latest — never prefill from MangaDex's own lastChapter attr (often stale)
   document.getElementById('f-chlatest').value = '0';
-  document.getElementById('f-chlatest-display').textContent = 'Fetching…';
-  document.getElementById('f-chlatest-display').style.color = 'var(--muted)';
+  const disp = document.getElementById('f-chlatest-display');
+  disp.textContent = 'Fetching…'; disp.style.color = 'var(--muted)';
   document.getElementById('md-results').classList.remove('open');
   document.getElementById('md-search').value = '';
-
   showToast('Fetching latest chapter…');
   try {
-    const result = await getLatestCh(info.id, info.title, info.type, '');
-    const ch = result?.ch ?? null;
-    if (ch !== null && ch > 0) {
-      document.getElementById('f-chlatest').value = ch;
-      document.getElementById('f-chlatest-display').textContent = `Ch.${ch}  (${result.source})`;
-      document.getElementById('f-chlatest-display').style.color = 'var(--accent3)';
-      showToast(`Latest: Ch.${ch} via ${result.source} ✓`);
+    const r = await getLatestCh(info.id, '');
+    if (r?.ch > 0) {
+      document.getElementById('f-chlatest').value = r.ch;
+      disp.textContent = 'Ch.' + r.ch + '  (' + r.source + ')';
+      disp.style.color = 'var(--accent3)';
+      showToast('Latest: Ch.' + r.ch + ' ✓');
     } else {
-      document.getElementById('f-chlatest').value = '0';
-      document.getElementById('f-chlatest-display').textContent = 'Not found — will fetch on Check Updates';
-      showToast('Could not fetch chapter — will retry on Check Updates', 'err');
+      disp.textContent = 'Not found — will fetch on Check Updates';
+      showToast('Could not fetch chapter', 'err');
     }
-  } catch {
-    document.getElementById('f-chlatest-display').textContent = 'Error fetching — will retry on Check Updates';
-    showToast('Could not fetch chapter', 'err');
-  }
+  } catch { disp.textContent = 'Error — will retry on Check Updates'; }
 }
 
-async function save() {
-  const title = document.getElementById('f-title').value.trim();
-  if (!title) { showToast('Title is required!', 'err'); return; }
-  const mdId = document.getElementById('f-mdid').value.trim();
-  const customUrl = document.getElementById('f-customurl').value.trim();
-  const chRead = parseFloat(document.getElementById('f-chread').value) || 0;
-  // chLatest comes ONLY from the hidden field set by auto-fetch — never from chRead
-  const chLatest = parseFloat(document.getElementById('f-chlatest').value) || 0;
+// ── IMPORT / EXPORT ───────────────────────────────────────────────────────────
+function openImport() {
+  importQueue = [];
+  document.getElementById('import-modal').classList.add('open');
+  document.getElementById('import-footer').style.display = 'none';
+  document.getElementById('paste-input').value = '';
+  document.getElementById('bulk-input').value = '';
+  document.getElementById('paste-preview').innerHTML = '';
+  document.getElementById('file-preview').innerHTML = '';
+  switchIETab('paste');
+}
+function closeImport() { document.getElementById('import-modal').classList.remove('open'); }
+function openExport() {
+  document.getElementById('export-count').textContent = lib.length;
+  const preview = lib.map(m => ({ title: m.title, type: m.type, readingStatus: m.readingStatus, chRead: m.chRead, chLatest: m.chLatest, mdId: m.mdId || '', customUrl: m.customUrl || '', seriesStatus: m.seriesStatus || 'ongoing', cover: m.cover || '' }));
+  document.getElementById('export-preview').value = JSON.stringify(preview, null, 2);
+  document.getElementById('export-modal').classList.add('open');
+}
+function closeExport() { document.getElementById('export-modal').classList.remove('open'); }
 
-  if (editId) {
-    const m = lib.find(x => x.id === editId);
-    const oldLatest = m.chLatest || 0;
-    m.title = title;
-    m.mdId = mdId;
-    m.customUrl = customUrl;
-    m.type = document.getElementById('f-type').value;
-    m.readingStatus = document.getElementById('f-rstatus').value;
-    m.chRead = chRead;
-    // Only update chLatest if we have a valid auto-fetched value
-    if (chLatest > 0) m.chLatest = Math.max(chLatest, oldLatest);
-    m.hasNew = (m.chLatest || 0) > m.chRead;
-    if ((m.chLatest || 0) > oldLatest) {
-      updLog.unshift({ id:uid(), mangaId:m.id, title:m.title, type:m.type, oldCh:oldLatest, newCh:m.chLatest, cover:m.cover||'', time:Date.now(), read:false });
-      saveLog();
-    }
-    showToast('Saved ✓');
-  } else {
-    let cover = '';
-    let seriesStatus = 'ongoing';
-    if (mdId) {
+function switchIETab(name) {
+  currentIETab = name;
+  document.querySelectorAll('.ie-tab').forEach((t,i) => t.classList.toggle('active', ['paste','file','bulk'][i] === name));
+  document.querySelectorAll('.ie-panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('ie-' + name).classList.add('active');
+}
+
+function renderImportPreview(containerId) {
+  const c = document.getElementById(containerId);
+  if (!importQueue.length) { c.innerHTML = ''; return; }
+  c.innerHTML = '<div class="import-preview">' + importQueue.map(item =>
+    '<div class="preview-row"><div class="preview-status ' + (item.status === 'ok' ? 'ps-ok' : item.status === 'dup' ? 'ps-dup' : 'ps-err') + '"></div><div class="preview-title">' + esc(item.title) + '</div><div class="preview-meta">Ch.' + (item.chRead || 0) + (item.status === 'dup' ? ' · DUP' : '') + '</div></div>'
+  ).join('') + '</div>';
+  document.getElementById('import-footer').style.display = 'flex';
+  document.getElementById('do-import-btn').disabled = false;
+}
+
+function parsePasteInput() {
+  const raw = document.getElementById('paste-input').value.trim();
+  if (!raw) { showToast('Nothing to import!', 'err'); return; }
+  importQueue = raw.split('\n').map(line => {
+    const parts = line.split(',');
+    const title = parts[0].trim();
+    if (!title) return null;
+    const chRead = parseFloat(parts[1]) || 0;
+    const existing = lib.find(m => m.title.toLowerCase() === title.toLowerCase());
+    return { title, chRead, type: 'manga', readingStatus: 'reading', status: existing ? 'dup' : 'ok' };
+  }).filter(Boolean);
+  renderImportPreview('paste-preview');
+}
+
+async function doImport() {
+  const btn = document.getElementById('do-import-btn');
+  btn.disabled = true;
+  const items = importQueue.filter(i => i.status !== 'dup');
+  if (!items.length) { showToast('Nothing new to import (all duplicates)', 'err'); btn.disabled = false; return; }
+
+  const prog = document.getElementById(currentIETab + '-progress');
+  prog.style.display = 'block';
+
+  const fullItems = items.filter(i => i.mdId);
+  const lookupItems = items.filter(i => !i.mdId);
+
+  for (const item of fullItems) {
+    if (lib.find(m => m.mdId && m.mdId === item.mdId)) continue;
+    lib.push({ id: uid(), title: item.title, mdId: item.mdId || '', customUrl: item.customUrl || '', cover: item.cover || '', seriesStatus: item.seriesStatus || 'ongoing', type: item.type || 'manga', readingStatus: item.readingStatus || 'reading', chRead: item.chRead || 0, chLatest: item.chLatest || 0, hasNew: (item.chLatest||0) > (item.chRead||0), addedAt: Date.now() });
+  }
+  saveLib(); renderLib();
+
+  const BATCH = 3;
+  let added = fullItems.length;
+  for (let i = 0; i < lookupItems.length; i += BATCH) {
+    const batch = lookupItems.slice(i, i + BATCH);
+    prog.textContent = 'Looking up ' + (i+1) + '–' + Math.min(i+BATCH, lookupItems.length) + ' of ' + lookupItems.length + '…';
+    await Promise.all(batch.map(async item => {
       try {
-        const d = await mdFetch(`/manga/${mdId}?includes[]=cover_art`);
-        cover = coverUrl(d.data) || '';
-        seriesStatus = d.data?.attributes?.status || 'ongoing';
-      } catch {}
-    }
-    lib.push({
-      id: uid(), title, mdId, customUrl, cover, seriesStatus,
-      type: document.getElementById('f-type').value,
-      readingStatus: document.getElementById('f-rstatus').value,
-      chRead,
-      chLatest,           // 0 if not fetched yet — Check Updates will fill it
-      hasNew: chLatest > chRead && chLatest > 0,
-      addedAt: Date.now()
-    });
-    showToast(`"${title}" added! ✓`);
-  }
-
-  saveLib(); closeModal(); renderLib();
-}
-
-// ── REFRESH SINGLE MANGA ─────────────────────────────────────────────────────
-async function refreshOne(id) {
-  const m = lib.find(x => x.id === id);
-  if (!m) return;
-  showToast(`Refreshing ${m.title}…`);
-  try {
-    const r = await getLatestCh(m.mdId, m.title, m.type, m.customUrl || '');
-    if (r && r.ch > 0) {
-      const old = m.chLatest || 0;
-      m.chSource = r.source;
-      m.chLatest = r.ch;
-      m.hasNew = m.chLatest > (m.chRead || 0);
-      if (r.ch > old) {
-        updLog.unshift({ id: uid(), mangaId: m.id, title: m.title, type: m.type, oldCh: old, newCh: r.ch, source: r.source, cover: m.cover || '', time: Date.now(), read: false });
-        saveLog();
-      }
-      saveLib(); renderLib();
-      showToast(`${m.title} → Ch.${r.ch} via ${r.source} ✓`);
-    } else {
-      showToast(`Could not fetch chapters for ${m.title}`, 'err');
-    }
-  } catch(e) {
-    showToast(`Error: ${e.message}`, 'err');
-  }
-}
-
-// ── DEBUG SOURCES — shows what every API returns for a manga ─────────────────
-async function debugSources(id) {
-  const m = lib.find(x => x.id === id);
-  if (!m) return;
-
-  const modal = document.getElementById('debug-modal');
-  const body = document.getElementById('debug-body');
-  const shortTitle = m.title.length > 22 ? m.title.slice(0,22)+'…' : m.title;
-  document.getElementById('debug-title').textContent = shortTitle;
-  modal.classList.add('open');
-
-  const srcKeys = ['custom','md-feed','md-agg','md-meta','comick','rinko'];
-  const srcLabels = { 'custom':'Custom URL', 'md-feed':'MangaDex Feed', 'md-agg':'MangaDex Aggregate', 'md-meta':'MangaDex Meta', 'comick':'ComicK', 'rinko':'Rinko Comics' };
-
-  body.innerHTML = `
-    <div style="font-size:9px;color:var(--muted);letter-spacing:.5px;line-height:2;padding:4px 2px">
-      ID: <span style="opacity:.6">${m.mdId}</span><br>
-      Stored: <strong style="color:var(--text)">Ch.${m.chLatest||0}</strong> latest &middot; via <span style="color:var(--accent3)">${m.chSource||'?'}</span>
-    </div>
-    ${srcKeys.map(k => `
-    <div id="dbg-${k}" style="display:flex;justify-content:space-between;align-items:center;padding:9px 12px;background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--muted);transition:border-color .3s">
-      <span style="font-size:9px;color:var(--muted);letter-spacing:1px;text-transform:uppercase">${srcLabels[k]}</span>
-      <span id="dbg-val-${k}" style="font-size:9px;color:var(--muted);letter-spacing:1px">…</span>
-    </div>`).join('')}
-    <div id="dbg-best" style="display:none;padding:10px 12px;background:var(--card);border:1px solid var(--accent3);text-align:center;margin-top:4px"></div>`;
-
-  let best = 0;
-
-  function update(key, ch) {
-    const row = document.getElementById('dbg-' + key);
-    const val = document.getElementById('dbg-val-' + key);
-    if (!row || !val) return;
-    if (ch > 0) {
-      row.style.borderLeftColor = 'var(--accent3)';
-      val.style.color = 'var(--accent3)';
-      val.style.fontSize = '14px';
-      val.style.fontWeight = '700';
-      val.textContent = 'Ch.' + ch;
-      if (ch > best) {
-        best = ch;
-        const el = document.getElementById('dbg-best');
-        el.style.display = 'block';
-        el.innerHTML = '<span style="color:var(--muted);font-size:9px;letter-spacing:2px">BEST → </span><strong style="color:var(--accent3);font-size:20px">Ch.' + best + '</strong>';
-      }
-    } else {
-      row.style.borderLeftColor = 'var(--accent)';
-      val.style.color = 'var(--accent)';
-      val.style.fontSize = '13px';
-      val.textContent = '—';
-    }
-  }
-
-  // Custom URL
-  if (m.customUrl) {
-    raceFetch(m.customUrl).then(async res => {
-      try {
-        const html = await res.text();
-        const patterns = [/chapter[s]?\s+(\d+)/i, /ch\.\s*(\d+)/i, /(\d+)\s+chapter/i];
-        for (const p of patterns) {
-          const match = html.match(p);
-          if (match) { update('custom', parseInt(match[1])); return; }
+        const results = await searchMD(item.title);
+        const match = results[0];
+        if (match) {
+          const title = match.attributes.title.en || Object.values(match.attributes.title)[0] || item.title;
+          const mdId = match.id;
+          const type = item.type || mdType(match);
+          const seriesStatus = match.attributes.status || 'ongoing';
+          let cover = coverUrl(match) || '';
+          if (!cover) { try { const d = await mdFetch('/manga/' + mdId + '?includes[]=cover_art'); cover = coverUrl(d.data) || ''; } catch {} }
+          const r = await getLatestCh(mdId, item.customUrl || '');
+          lib.push({ id: uid(), title, mdId, customUrl: item.customUrl || '', cover, seriesStatus, type, readingStatus: item.readingStatus || 'reading', chRead: item.chRead || 0, chLatest: r?.ch || 0, chSource: r?.source || '', hasNew: (r?.ch||0) > (item.chRead||0), addedAt: Date.now() });
+        } else {
+          lib.push({ id: uid(), title: item.title, mdId: '', customUrl: item.customUrl || '', cover: '', seriesStatus: 'ongoing', type: item.type || 'manga', readingStatus: item.readingStatus || 'reading', chRead: item.chRead || 0, chLatest: 0, hasNew: false, addedAt: Date.now() });
         }
-        update('custom', 0);
-      } catch { update('custom', 0); }
-    }).catch(() => update('custom', 0));
-  } else {
-    const row = document.getElementById('dbg-custom');
-    const val = document.getElementById('dbg-val-custom');
-    if (row && val) { row.style.opacity = '.3'; val.textContent = 'not set'; }
+        added++;
+        saveLib();
+      } catch {}
+    }));
+    renderLib();
+    if (i + BATCH < lookupItems.length) await sleep(400);
   }
 
-  raceFetch(MD + `/manga/${m.mdId}/feed?limit=500&order[chapter]=desc&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic`).then(async res => {
-    try {
-      const d = await res.json();
-      const nums = (d?.data||[]).map(c=>parseFloat(c.attributes?.chapter)).filter(n=>!isNaN(n)&&n>0);
-      update('md-feed', nums.length ? Math.max(...nums) : 0);
-    } catch { update('md-feed', 0); }
-  }).catch(() => update('md-feed', 0));
-
-  raceFetch(MD + `/manga/${m.mdId}/aggregate`).then(async res => {
-    try {
-      const d = await res.json();
-      const nums = [];
-      for (const vol of Object.values(d.volumes||{}))
-        for (const ch of Object.values(vol.chapters||{})) { const n=parseFloat(ch.chapter); if(!isNaN(n)&&n>0) nums.push(n); }
-      update('md-agg', nums.length ? Math.max(...nums) : 0);
-    } catch { update('md-agg', 0); }
-  }).catch(() => update('md-agg', 0));
-
-  raceFetch(MD + `/manga/${m.mdId}`).then(async res => {
-    try {
-      const d = await res.json();
-      const n = parseFloat(d.data?.attributes?.lastChapter);
-      update('md-meta', (!isNaN(n)&&n>0) ? n : 0);
-    } catch { update('md-meta', 0); }
-  }).catch(() => update('md-meta', 0));
-
-  raceFetch(`${COMICK}/comic/${m.mdId}`).then(async res => {
-    try {
-      const info = await res.json();
-      const slug = info?.comic?.slug || info?.slug;
-      if (!slug) { update('comick', 0); return; }
-      const res2 = await raceFetch(`${COMICK}/comic/${slug}/chapters?limit=1&page=1&chap-order=desc`);
-      if (!res2) { update('comick', 0); return; }
-      const cd = await res2.json();
-      const n = parseFloat(cd?.chapters?.[0]?.chap);
-      update('comick', (!isNaN(n)&&n>0) ? n : 0);
-    } catch { update('comick', 0); }
-  }).catch(() => update('comick', 0));
-
-  const rinkoSlug = m.title.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
-  raceFetch(`https://rinkocomics.com/comic/${rinkoSlug}/`).then(async res => {
-    try {
-      const html = await res.text();
-      const match = html.match(/Chapters\s+(\d+)/i);
-      const n = match ? parseInt(match[1]) : 0;
-      update('rinko', n > 0 ? n : 0);
-    } catch { update('rinko', 0); }
-  }).catch(() => update('rinko', 0));
+  prog.textContent = '✓ Done! Added ' + added + ' manga.';
+  renderLib();
+  showToast('Imported ' + added + ' manga ✓');
+  btn.disabled = false;
+  setTimeout(() => { if (added > 0) closeImport(); }, 1500);
 }
 
+function onDragOver(e) { e.preventDefault(); document.getElementById('drop-zone').classList.add('drag-over'); }
+function onDragLeave(e) { document.getElementById('drop-zone').classList.remove('drag-over'); }
+function onDrop(e) { e.preventDefault(); document.getElementById('drop-zone').classList.remove('drag-over'); const file = e.dataTransfer.files[0]; if (file) processFile(file); }
+function onFileSelect(e) { if (e.target.files[0]) processFile(e.target.files[0]); }
 
+function processFile(file) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      if (file.name.endsWith('.json')) parseJSONImport(e.target.result);
+      else parseCSVImport(e.target.result);
+    } catch(err) { showToast('Could not parse file: ' + err.message, 'err'); }
+  };
+  reader.readAsText(file);
+}
 
+function parseJSONImport(content) {
+  const data = JSON.parse(content);
+  const items = Array.isArray(data) ? data : data.library || data.lib || [];
+  importQueue = items.map(item => {
+    const title = item.title || item.name || '';
+    if (!title) return null;
+    const existing = lib.find(m => m.title.toLowerCase() === title.toLowerCase());
+    return { title, chRead: parseFloat(item.chRead) || 0, chLatest: parseFloat(item.chLatest) || 0, type: item.type || 'manga', readingStatus: item.readingStatus || 'reading', mdId: item.mdId || '', customUrl: item.customUrl || '', cover: item.cover || '', seriesStatus: item.seriesStatus || 'ongoing', status: existing ? 'dup' : 'ok' };
+  }).filter(Boolean);
+  renderImportPreview('file-preview');
+}
+
+function parseCSVImport(content) {
+  const lines = content.trim().split('\n');
+  const header = lines[0].toLowerCase().split(',').map(h => h.trim().replace(/"/g,''));
+  const idx = name => header.findIndex(h => h.includes(name));
+  const ti = idx('title'), ci = idx('chread'), li = idx('latest'), tyi = idx('type'), si = idx('status');
+  importQueue = lines.slice(1).map(line => {
+    const cols = line.split(',').map(c => c.trim().replace(/"/g,''));
+    const title = ti >= 0 ? cols[ti] : cols[0];
+    if (!title) return null;
+    const existing = lib.find(m => m.title.toLowerCase() === title.toLowerCase());
+    return { title, chRead: parseFloat(ci >= 0 ? cols[ci] : cols[1]) || 0, chLatest: parseFloat(li >= 0 ? cols[li] : 0) || 0, type: tyi >= 0 ? cols[tyi] : 'manga', readingStatus: si >= 0 ? cols[si] : 'reading', status: existing ? 'dup' : 'ok' };
+  }).filter(Boolean);
+  renderImportPreview('file-preview');
+}
+
+async function bulkMDImport() {
+  const raw = document.getElementById('bulk-input').value.trim();
+  if (!raw) { showToast('Paste some MangaDex IDs first!', 'err'); return; }
+  const ids = raw.split('\n').map(l => l.trim()).filter(l => l.length > 10);
+  if (!ids.length) { showToast('No valid IDs found', 'err'); return; }
+  const prog = document.getElementById('bulk-progress');
+  prog.style.display = 'block';
+  let added = 0;
+  for (let i = 0; i < ids.length; i++) {
+    const mdId = ids[i];
+    prog.textContent = 'Fetching ' + (i+1) + '/' + ids.length + '…';
+    if (lib.find(m => m.mdId === mdId)) { await sleep(200); continue; }
+    try {
+      const d = await mdFetch('/manga/' + mdId + '?includes[]=cover_art');
+      const manga = d.data;
+      const title = manga.attributes.title.en || Object.values(manga.attributes.title)[0] || mdId;
+      const type = mdType(manga);
+      const cover = coverUrl(manga) || '';
+      const seriesStatus = manga.attributes.status || 'ongoing';
+      const r = await getLatestCh(mdId, '');
+      lib.push({ id: uid(), title, mdId, customUrl: '', cover, seriesStatus, type, readingStatus: 'reading', chRead: 0, chLatest: r?.ch || 0, chSource: r?.source || '', hasNew: (r?.ch||0) > 0, addedAt: Date.now() });
+      added++; saveLib();
+    } catch {}
+    await sleep(500);
+  }
+  prog.textContent = '✓ Done! Added ' + added + ' manga.';
+  renderLib();
+  showToast('Bulk imported ' + added + ' manga ✓');
+  setTimeout(() => { if (added > 0) closeImport(); }, 1500);
+}
+
+function exportJSON() {
+  const data = lib.map(m => ({ title: m.title, type: m.type, readingStatus: m.readingStatus, chRead: m.chRead || 0, chLatest: m.chLatest || 0, mdId: m.mdId || '', customUrl: m.customUrl || '', seriesStatus: m.seriesStatus || 'ongoing', cover: m.cover || '' }));
+  downloadFile('mangatrack-library.json', JSON.stringify(data, null, 2), 'application/json');
+  showToast('JSON exported ✓');
+}
+function exportCSV() {
+  const header = 'title,type,readingStatus,chRead,chLatest,mdId,seriesStatus';
+  const rows = lib.map(m => [m.title, m.type, m.readingStatus, m.chRead||0, m.chLatest||0, m.mdId||'', m.seriesStatus||'ongoing'].map(v => '"' + String(v).replace(/"/g,'""') + '"').join(','));
+  downloadFile('mangatrack-library.csv', [header, ...rows].join('\n'), 'text/csv');
+  showToast('CSV exported ✓');
+}
+function exportText() {
+  downloadFile('mangatrack-library.txt', lib.map(m => m.title + ' (Ch.' + (m.chRead||0) + '/' + (m.chLatest||'?') + ')').join('\n'), 'text/plain');
+  showToast('Text list exported ✓');
+}
+function downloadFile(name, content, mime) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([content], { type: mime }));
+  a.download = name; a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+// ── HELPERS ───────────────────────────────────────────────────────────────────
 function showToast(msg, type) {
   const t = document.getElementById('toast');
   t.textContent = msg;
-  t.className = 'toast' + (type==='err'?' err':'') + ' show';
+  t.className = 'toast' + (type === 'err' ? ' err' : '') + ' show';
   clearTimeout(t._t);
   t._t = setTimeout(() => t.classList.remove('show'), 3500);
 }
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
-function esc(s) {
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-
-document.getElementById('debug-modal').addEventListener('click', e => { if (e.target===e.currentTarget) e.currentTarget.classList.remove('open'); });
-// Close on overlay click
+// ── EVENT LISTENERS ───────────────────────────────────────────────────────────
 document.getElementById('modal').addEventListener('click', e => { if (e.target===e.currentTarget) closeModal(); });
-// Close results on outside click
+document.getElementById('import-modal').addEventListener('click', e => { if (e.target===e.currentTarget) closeImport(); });
+document.getElementById('export-modal').addEventListener('click', e => { if (e.target===e.currentTarget) closeExport(); });
+document.getElementById('debug-modal').addEventListener('click', e => { if (e.target===e.currentTarget) e.currentTarget.classList.remove('open'); });
 document.addEventListener('click', e => {
   const r = document.getElementById('md-results');
   if (r && !r.contains(e.target) && e.target.id !== 'md-search') r.classList.remove('open');
@@ -1549,7 +1225,6 @@ document.addEventListener('click', e => {
 // ── INIT ──────────────────────────────────────────────────────────────────────
 document.getElementById('panel-library').style.display = 'block';
 renderLib();
-// Auto-check every hour
 setInterval(checkAllUpdates, 60 * 60 * 1000);
 </script>
 </body>
