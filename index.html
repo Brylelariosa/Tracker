@@ -327,30 +327,55 @@ async function searchMD(title) {
 }
 
 async function getLatestCh(mdId) {
-  // Strategy 1: Use the aggregate endpoint — returns ALL chapters grouped by volume/chapter,
-  // not per-scanlation-group-upload, so it is immune to the "96 limit filled by duplicates" problem.
-  // Try English first, then any language.
-  for (const lang of ["en", ""]) {
-    try {
-      const path = `/manga/${mdId}/aggregate` + (lang ? `?translatedLanguage[]=${lang}` : "");
-      const d = await mdFetch(path);
-      const volumes = d.volumes || {};
-      const chNums = [];
-      for (const vol of Object.values(volumes)) {
-        for (const ch of Object.values(vol.chapters || {})) {
-          const n = parseFloat(ch.chapter);
-          if (!isNaN(n) && n > 0) chNums.push(n);
-        }
+  // Strategy 1: aggregate endpoint (all languages) — best because it deduplicates per chapter number
+  try {
+    const d = await mdFetch(`/manga/${mdId}/aggregate`);
+    const volumes = d.volumes || {};
+    const chNums = [];
+    for (const vol of Object.values(volumes)) {
+      for (const ch of Object.values(vol.chapters || {})) {
+        const n = parseFloat(ch.chapter);
+        if (!isNaN(n) && n > 0) chNums.push(n);
       }
+    }
+    if (chNums.length) return Math.max(...chNums);
+  } catch {}
+
+  // Strategy 2: aggregate with English only
+  try {
+    const d = await mdFetch(`/manga/${mdId}/aggregate?translatedLanguage[]=en`);
+    const volumes = d.volumes || {};
+    const chNums = [];
+    for (const vol of Object.values(volumes)) {
+      for (const ch of Object.values(vol.chapters || {})) {
+        const n = parseFloat(ch.chapter);
+        if (!isNaN(n) && n > 0) chNums.push(n);
+      }
+    }
+    if (chNums.length) return Math.max(...chNums);
+  } catch {}
+
+  // Strategy 3: feed endpoint — sorted by chapter desc, high limit, all content ratings
+  for (const lang of ["en", "ja", "ja-ro", ""]) {
+    try {
+      const langParam = lang ? `&translatedLanguage[]=${lang}` : "";
+      const path = `/manga/${mdId}/feed?limit=96&order[chapter]=desc&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica&contentRating[]=pornographic${langParam}`;
+      const d = await mdFetch(path);
+      const chapters = (d.data || []);
+      const chNums = chapters
+        .map(c => parseFloat(c.attributes?.chapter))
+        .filter(n => !isNaN(n) && n > 0);
       if (chNums.length) return Math.max(...chNums);
     } catch {}
   }
-  // Strategy 2: Fallback to manga own lastChapter attribute
+
+  // Strategy 4: manga lastChapter attribute
   try {
     const d = await mdFetch(`/manga/${mdId}`);
     const last = parseFloat(d.data?.attributes?.lastChapter);
     if (!isNaN(last) && last > 0) return last;
   } catch {}
+
   return null;
 }
 
