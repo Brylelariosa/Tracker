@@ -4,7 +4,7 @@
     <meta name="referrer" content="no-referrer">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>MangaTrack v15</title>
+<title>MangaTrack v16</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;700;900&family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&family=Bebas+Neue&display=swap" rel="stylesheet">
 <style>
 :root {
@@ -19,12 +19,25 @@
   --muted: #5c5c7a;
   --success: #26de81;
 }
+body.light {
+  --bg: #f0f0f5;
+  --surface: #e4e4ec;
+  --card: #ffffff;
+  --border: #d0d0e0;
+  --accent: #d42e50;
+  --accent2: #e08800;
+  --accent3: #009fa0;
+  --text: #1a1a2e;
+  --muted: #7070a0;
+  --success: #18b860;
+}
 * { margin:0; padding:0; box-sizing:border-box; }
 body {
   background: var(--bg);
   color: var(--text);
   font-family: 'DM Mono', monospace;
   min-height: 100vh;
+  transition: background .25s, color .25s;
 }
 body::before {
   content: '';
@@ -106,6 +119,32 @@ header { padding: 28px 0 20px; border-bottom: 1px solid var(--border); display: 
 .dot { width:6px; height:6px; border-radius:50%; flex-shrink:0; }
 .dot.ongoing{background:var(--accent3)} .dot.completed{background:var(--muted)} .dot.hiatus{background:var(--accent2)} .dot.cancelled{background:#f55}
 .card-source { font-size:8px; color:var(--muted); opacity:.5; margin-top:3px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; letter-spacing:.5px; }
+
+/* +1 chapter button */
+.plus-one { background:var(--surface); border:1px solid var(--border); color:var(--muted); height:26px; padding:0 8px; display:flex; align-items:center; justify-content:center; cursor:pointer; font-size:10px; letter-spacing:1px; transition:all .15s; flex-shrink:0; font-family:'DM Mono',monospace; }
+.plus-one:hover { border-color:var(--accent3); color:var(--accent3); background:rgba(0,210,211,.08); }
+.plus-one:active { transform:scale(.95); }
+
+/* chapters-behind badge */
+.behind-badge { display:inline-block; background:rgba(232,56,90,.15); color:var(--accent); font-size:8px; padding:2px 6px; letter-spacing:1px; margin-left:4px; border:1px solid rgba(232,56,90,.25); }
+
+/* duplicate warning in add modal */
+.dup-warning { background:rgba(255,159,67,.1); border:1px solid rgba(255,159,67,.4); border-left:3px solid var(--accent2); padding:8px 12px; font-size:10px; color:var(--accent2); display:none; }
+
+/* suggestions panel */
+.suggest-panel { display:none; padding-bottom:60px; }
+.suggest-panel.active { display:block; }
+.suggest-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:12px; padding:16px 0 60px; }
+.suggest-card { background:var(--card); border:1px solid var(--border); overflow:hidden; cursor:pointer; transition:all .2s; animation:fadeUp .3s ease both; }
+.suggest-card:hover { border-color:var(--accent3); transform:translateY(-2px); box-shadow:0 8px 30px rgba(0,210,211,.1); }
+.suggest-cover { width:100%; height:130px; object-fit:cover; display:block; background:var(--surface); }
+.suggest-ph { width:100%; height:130px; background:linear-gradient(135deg,var(--surface),var(--border)); display:flex; align-items:center; justify-content:center; font-size:42px; color:var(--border); }
+.suggest-body { padding:10px 12px; }
+.suggest-title { font-family:'Noto Serif JP',serif; font-size:12px; font-weight:700; line-height:1.3; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; margin-bottom:5px; }
+.suggest-meta { font-size:9px; color:var(--muted); letter-spacing:1px; }
+.suggest-add { width:100%; margin-top:8px; background:var(--surface); border:1px solid var(--border); color:var(--muted); font-family:'DM Mono',monospace; font-size:9px; letter-spacing:2px; padding:6px; cursor:pointer; text-transform:uppercase; transition:all .15s; }
+.suggest-add:hover { border-color:var(--accent3); color:var(--accent3); }
+.suggest-loading { text-align:center; padding:60px 20px; color:var(--muted); font-size:10px; letter-spacing:2px; animation:pulse 1s infinite; }
 
 .empty { grid-column:1/-1; text-align:center; padding:80px 24px; }
 .empty-icon { font-size:60px; opacity:.15; margin-bottom:14px; }
@@ -193,9 +232,10 @@ header { padding: 28px 0 20px; border-bottom: 1px solid var(--border); display: 
   <header>
     <div>
       <div class="logo-title">MANGA<span>TRACK</span></div>
-      <div class="logo-sub">MangaDex · comix.to · MangaFire · Auto-detect</div>
+      <div class="logo-sub">MangaDex · MangaFire · Auto-detect · v16</div>
     </div>
     <div class="header-right">
+      <button class="btn btn-outline" id="themeBtn" onclick="toggleTheme()" title="Toggle light/dark">☀</button>
       <button class="btn btn-outline" onclick="openImport()">⬆ IMPORT</button>
       <button class="btn btn-outline" onclick="openExport()">⬇ EXPORT</button>
       <button class="btn btn-outline" id="checkBtn" onclick="checkAllUpdates()">
@@ -215,6 +255,7 @@ header { padding: 28px 0 20px; border-bottom: 1px solid var(--border); display: 
   <div class="tabs">
     <button class="tab active" id="tab-lib" onclick="switchTab('library')">Library</button>
     <button class="tab" id="tab-upd" onclick="switchTab('updates')">Updates <span id="upd-badge" class="tab-badge" style="display:none"></span></button>
+    <button class="tab" id="tab-sug" onclick="switchTab('suggestions')">Suggestions</button>
   </div>
 
   <!-- LIBRARY -->
@@ -238,6 +279,15 @@ header { padding: 28px 0 20px; border-bottom: 1px solid var(--border); display: 
         <option value="dropped">Dropped</option>
         <option value="plan">Plan to Read</option>
       </select>
+      <select class="flt" id="flt-sort" onchange="renderLib()">
+        <option value="default">Sort: Default</option>
+        <option value="title">Sort: Title A–Z</option>
+        <option value="title-desc">Sort: Title Z–A</option>
+        <option value="behind">Sort: Most Behind</option>
+        <option value="latest">Sort: Latest Chapter</option>
+        <option value="added">Sort: Recently Added</option>
+        <option value="updated">Sort: Last Updated</option>
+      </select>
     </div>
     <div class="grid" id="grid"></div>
   </div>
@@ -249,6 +299,15 @@ header { padding: 28px 0 20px; border-bottom: 1px solid var(--border); display: 
       <button class="btn btn-outline btn-sm" onclick="markAllRead()">Mark All Read</button>
     </div>
     <div id="log-list"></div>
+  </div>
+
+  <!-- SUGGESTIONS -->
+  <div class="suggest-panel" id="panel-suggestions">
+    <div class="log-toolbar">
+      <span class="log-label">Based on your library</span>
+      <button class="btn btn-outline btn-sm" onclick="loadSuggestions(true)">↻ Refresh</button>
+    </div>
+    <div id="suggest-grid" class="suggest-grid"></div>
   </div>
 </div>
 
@@ -264,6 +323,8 @@ header { padding: 28px 0 20px; border-bottom: 1px solid var(--border); display: 
         <strong>How it works:</strong> Search to auto-fill from MangaDex. For other sites, paste a manga page URL into <strong style="color:var(--accent2)">Custom Source URL</strong>. Natively supports <strong style="color:var(--accent3)">comix.to</strong> (via API) and <strong style="color:var(--accent3)">mangafire.to</strong> (via internal API), plus generic HTML scraping for most other sites.
       </div>
 
+      <div class="dup-warning" id="dup-warning">⚠ A manga with a similar title already exists in your library.</div>
+
       <div class="form-group" id="search-section">
         <label class="form-label">Search on MangaDex</label>
         <input class="form-input" id="md-search" placeholder="Type title to search live..." oninput="onMDSearch(event)" autocomplete="off">
@@ -274,7 +335,7 @@ header { padding: 28px 0 20px; border-bottom: 1px solid var(--border); display: 
 
       <div class="form-group">
         <label class="form-label">Title</label>
-        <input class="form-input" id="f-title" placeholder="Title (auto-filled from search)">
+        <input class="form-input" id="f-title" placeholder="Title (auto-filled from search)" oninput="checkDuplicate(this.value)">
       </div>
       <div class="form-row">
         <div class="form-group">
@@ -867,13 +928,27 @@ function renderLib() {
   const q = document.getElementById('q').value.toLowerCase();
   const ft = document.getElementById('flt-type').value;
   const fs = document.getElementById('flt-status').value;
+  const sortBy = document.getElementById('flt-sort').value;
 
   let items = lib.filter(m => {
     if (q && !m.title.toLowerCase().includes(q)) return false;
     if (ft && m.type !== ft) return false;
     if (fs && m.readingStatus !== fs) return false;
     return true;
-  }).sort((a, b) => (b.hasNew - a.hasNew) || (b.addedAt - a.addedAt));
+  });
+
+  // Sorting
+  items.sort((a, b) => {
+    switch (sortBy) {
+      case 'title':       return a.title.localeCompare(b.title);
+      case 'title-desc':  return b.title.localeCompare(a.title);
+      case 'behind':      return ((b.chLatest||0)-(b.chRead||0)) - ((a.chLatest||0)-(a.chRead||0));
+      case 'latest':      return (b.chLatest||0) - (a.chLatest||0);
+      case 'added':       return (b.addedAt||0) - (a.addedAt||0);
+      case 'updated':     return (b.lastUpdated||b.addedAt||0) - (a.lastUpdated||a.addedAt||0);
+      default:            return (b.hasNew - a.hasNew) || ((b.addedAt||0) - (a.addedAt||0));
+    }
+  });
 
   if (!items.length) {
     grid.innerHTML = '<div class="empty"><div class="empty-icon">📚</div><div class="empty-title">' + (lib.length ? 'No Results' : 'Empty Library') + '</div><div class="empty-sub">' + (lib.length ? 'Try different filters' : 'Click + ADD and search for manga') + '</div></div>';
@@ -882,10 +957,12 @@ function renderLib() {
 
   grid.innerHTML = items.map(m => {
     const hasNew = m.hasNew && (m.chLatest > 0) && (m.chLatest > (m.chRead || 0));
+    const behind = Math.max(0, (m.chLatest || 0) - (m.chRead || 0));
     const ss = m.seriesStatus || 'ongoing';
     const rlabel = { reading:'Reading', completed:'Completed', 'on-hold':'On Hold', dropped:'Dropped', plan:'Plan to Read' }[m.readingStatus] || m.readingStatus;
     const slabel = { ongoing:'Ongoing', completed:'Completed', hiatus:'Hiatus', cancelled:'Cancelled' }[ss] || ss;
     const srcBadge = m.customUrl ? '<span style="color:var(--accent2);font-size:8px">⚡ ' + esc(m.chSource || 'Custom') + '</span>' : m.chSource ? '<span style="color:var(--accent3);opacity:.7;font-size:8px">' + esc(m.chSource) + '</span>' : m.mdId ? '<span style="opacity:.3;font-size:8px">MangaDex</span>' : '<span style="color:var(--accent);opacity:.6;font-size:8px">⚠ no source</span>';
+    const behindBadge = behind > 1 ? '<span class="behind-badge">-' + behind + ' ch</span>' : '';
     return '<div class="card' + (hasNew ? ' has-new' : '') + '" id="card-' + m.id + '">' +
       (hasNew ? '<div class="new-pill">New Ch.</div>' : '') +
       (m.cover ? '<img class="card-cover" src="' + esc(m.cover) + '" loading="lazy" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'" alt="">' : '') +
@@ -895,11 +972,12 @@ function renderLib() {
         '<div class="card-title">' + esc(m.title) + '</div>' +
         '<div class="card-meta">' +
           '<div>' +
-            '<div class="ch-read">Read: Ch.' + (m.chRead || 0) + '</div>' +
+            '<div class="ch-read">Read: Ch.' + (m.chRead || 0) + behindBadge + '</div>' +
             '<div class="ch-latest' + (hasNew ? ' new' : '') + '">Latest: ' + (m.chLatest > 0 ? 'Ch.' + m.chLatest : '?') + (hasNew ? ' ↑' : '') + '</div>' +
           '</div>' +
           '<div class="card-actions">' +
-            '<button class="icon-btn" title="Mark as read" onclick="markRead(\'' + m.id + '\')">✓</button>' +
+            '<button class="plus-one" title="+1 chapter read" onclick="plusOne(\'' + m.id + '\')">+1</button>' +
+            '<button class="icon-btn" title="Mark all as read" onclick="markRead(\'' + m.id + '\')">✓</button>' +
             '<button class="icon-btn" title="Refresh" onclick="refreshOne(\'' + m.id + '\')">↻</button>' +
             '<button class="icon-btn" title="Debug sources" onclick="debugSources(\'' + m.id + '\')">⚑</button>' +
             '<button class="icon-btn" title="Edit" onclick="openEdit(\'' + m.id + '\')">✎</button>' +
@@ -981,11 +1059,175 @@ function markAllRead() {
 
 // ── TABS ──────────────────────────────────────────────────────────────────────
 function switchTab(name) {
-  ['lib','upd'].forEach(t => document.getElementById('tab-'+t).classList.remove('active'));
-  document.getElementById('tab-' + (name === 'library' ? 'lib' : 'upd')).classList.add('active');
+  ['lib','upd','sug'].forEach(t => { const el = document.getElementById('tab-'+t); if(el) el.classList.remove('active'); });
+  const tabMap = { library:'lib', updates:'upd', suggestions:'sug' };
+  const el = document.getElementById('tab-' + tabMap[name]);
+  if (el) el.classList.add('active');
   document.getElementById('panel-library').style.display = name === 'library' ? 'block' : 'none';
   document.getElementById('panel-updates').classList.toggle('active', name === 'updates');
+  document.getElementById('panel-suggestions').classList.toggle('active', name === 'suggestions');
   if (name === 'updates') renderLog();
+  if (name === 'suggestions') loadSuggestions();
+}
+
+// ── +1 CHAPTER ────────────────────────────────────────────────────────────────
+function plusOne(id) {
+  const m = lib.find(x => x.id === id);
+  if (!m) return;
+  m.chRead = Math.round(((m.chRead || 0) + 1) * 10) / 10;
+  m.hasNew = (m.chLatest || 0) > m.chRead;
+  m.lastUpdated = Date.now();
+  saveLib(); renderLib();
+  showToast(m.title + ' → Ch.' + m.chRead + ' ✓');
+}
+
+// ── THEME TOGGLE ──────────────────────────────────────────────────────────────
+function toggleTheme() {
+  const isLight = document.body.classList.toggle('light');
+  localStorage.setItem('mgt_theme', isLight ? 'light' : 'dark');
+  document.getElementById('themeBtn').textContent = isLight ? '🌙' : '☀';
+}
+(function initTheme() {
+  if (localStorage.getItem('mgt_theme') === 'light') {
+    document.body.classList.add('light');
+    document.addEventListener('DOMContentLoaded', () => {
+      const btn = document.getElementById('themeBtn');
+      if (btn) btn.textContent = '🌙';
+    });
+  }
+})();
+
+// ── DUPLICATE DETECTION ───────────────────────────────────────────────────────
+function checkDuplicate(title) {
+  if (!title || title.length < 3) { hideDupWarning(); return; }
+  const norm = t => t.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const input = norm(title);
+  const dup = lib.find(m => {
+    const existing = norm(m.title);
+    if (existing === input) return true;
+    // fuzzy: one contains the other with at least 80% overlap
+    const shorter = Math.min(existing.length, input.length);
+    const longer = Math.max(existing.length, input.length);
+    if (shorter < 4) return existing === input;
+    if (longer > 0 && shorter / longer > 0.85) {
+      return existing.includes(input) || input.includes(existing);
+    }
+    return false;
+  });
+  const warn = document.getElementById('dup-warning');
+  if (dup && warn) {
+    warn.style.display = 'block';
+    warn.textContent = '⚠ "' + dup.title + '" is already in your library.';
+  } else {
+    hideDupWarning();
+  }
+}
+function hideDupWarning() {
+  const w = document.getElementById('dup-warning');
+  if (w) w.style.display = 'none';
+}
+
+// ── SUGGESTIONS ───────────────────────────────────────────────────────────────
+let suggestionsLoaded = false;
+async function loadSuggestions(force = false) {
+  if (suggestionsLoaded && !force) return;
+  const grid = document.getElementById('suggest-grid');
+  if (!grid) return;
+
+  const mdManga = lib.filter(m => m.mdId);
+  if (!mdManga.length) {
+    grid.innerHTML = '<div class="suggest-loading" style="animation:none">Add manga with MangaDex IDs to get suggestions.</div>';
+    return;
+  }
+
+  grid.innerHTML = '<div class="suggest-loading">Finding recommendations…</div>';
+  suggestionsLoaded = true;
+
+  try {
+    // Pick up to 5 random reading manga with mdId as seeds
+    const seeds = mdManga.filter(m => m.readingStatus === 'reading' || m.readingStatus === 'completed')
+      .sort(() => Math.random() - .5).slice(0, 5);
+    if (!seeds.length) seeds.push(...mdManga.slice(0, 5));
+
+    // Fetch tags from seeds, collect popular ones
+    const tagCounts = {};
+    await Promise.allSettled(seeds.map(async m => {
+      try {
+        const d = await mdFetch('/manga/' + m.mdId + '?includes[]=tag');
+        (d?.data?.attributes?.tags || []).forEach(t => {
+          const name = t.attributes?.name?.en;
+          if (name) tagCounts[t.id] = (tagCounts[t.id] || { name, count: 0, id: t.id });
+          if (name) tagCounts[t.id].count++;
+        });
+      } catch {}
+    }));
+
+    // Take top 3 tags as seeds for recommendations
+    const topTags = Object.values(tagCounts).sort((a,b) => b.count - a.count).slice(0, 3).map(t => t.id);
+    const existingIds = new Set(lib.map(m => m.mdId).filter(Boolean));
+
+    let results = [];
+    if (topTags.length) {
+      const tagQuery = topTags.map(id => 'includedTags[]=' + id).join('&');
+      const d = await mdFetch('/manga?' + tagQuery + '&limit=18&includes[]=cover_art&contentRating[]=safe&contentRating[]=suggestive&order[rating]=desc');
+      results = (d?.data || []).filter(m => !existingIds.has(m.id));
+    }
+
+    // Fallback: popular manga
+    if (results.length < 6) {
+      const d = await mdFetch('/manga?limit=18&includes[]=cover_art&contentRating[]=safe&contentRating[]=suggestive&order[rating]=desc');
+      const more = (d?.data || []).filter(m => !existingIds.has(m.id) && !results.find(r => r.id === m.id));
+      results = [...results, ...more];
+    }
+
+    results = results.slice(0, 12);
+
+    if (!results.length) {
+      grid.innerHTML = '<div class="suggest-loading" style="animation:none">No suggestions found — try adding more manga first!</div>';
+      return;
+    }
+
+    grid.innerHTML = results.map(m => {
+      const title = m.attributes?.title?.en || Object.values(m.attributes?.title || {})[0] || 'Unknown';
+      const status = m.attributes?.status || 'ongoing';
+      const type = mdType(m);
+      const cover = coverUrl(m);
+      const id = m.id;
+      const info = JSON.stringify({ id, title, type, status, cover: cover || '' }).replace(/'/g, "&#39;");
+      return '<div class="suggest-card">' +
+        (cover ? '<img class="suggest-cover" src="' + esc(cover) + '" loading="lazy" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'" alt=""><div class="suggest-ph" style="display:none">' + title.charAt(0) + '</div>'
+                : '<div class="suggest-ph">' + title.charAt(0) + '</div>') +
+        '<div class="suggest-body">' +
+          '<div class="suggest-title">' + esc(title) + '</div>' +
+          '<div class="suggest-meta">' + type.toUpperCase() + ' · ' + status + '</div>' +
+          '<button class="suggest-add" onclick=\'quickAddSuggestion(' + info + ')\'>+ Add to Library</button>' +
+        '</div></div>';
+    }).join('');
+
+  } catch(e) {
+    grid.innerHTML = '<div class="suggest-loading" style="animation:none">Could not load suggestions. Check your connection.</div>';
+  }
+}
+
+async function quickAddSuggestion(info) {
+  if (lib.find(m => m.mdId === info.id)) { showToast('Already in library!', 'err'); return; }
+  showToast('Adding ' + info.title + '…');
+  try {
+    let cover = info.cover || '';
+    let seriesStatus = info.status || 'ongoing';
+    if (!cover) {
+      const d = await mdFetch('/manga/' + info.id + '?includes[]=cover_art');
+      cover = coverUrl(d.data) || '';
+      seriesStatus = d.data?.attributes?.status || 'ongoing';
+    }
+    const r = await getLatestCh(info.id, '');
+    lib.push({ id: uid(), title: info.title, mdId: info.id, customUrl: '', cover, seriesStatus, type: info.type || 'manga', readingStatus: 'plan', chRead: 0, chLatest: r?.ch || 0, chSource: r?.source || '', hasNew: false, addedAt: Date.now() });
+    saveLib(); renderLib();
+    showToast('"' + info.title + '" added! ✓');
+    // Refresh suggestions to remove added title
+    suggestionsLoaded = false;
+    loadSuggestions();
+  } catch(e) { showToast('Error adding: ' + e.message, 'err'); }
 }
 
 // ── MODAL ─────────────────────────────────────────────────────────────────────
@@ -1036,6 +1278,7 @@ function clearForm() {
   document.getElementById('f-rstatus').value = 'reading';
   const r = document.getElementById('md-results');
   r.classList.remove('open'); r.innerHTML = '';
+  hideDupWarning();
   const prev = document.getElementById('custom-url-preview');
   if (prev) prev.textContent = '';
 }
@@ -1100,6 +1343,7 @@ function onMDSearch(e) {
 
 async function selectMD(info) {
   document.getElementById('f-title').value = info.title;
+  checkDuplicate(info.title);
   document.getElementById('f-type').value = info.type;
   document.getElementById('f-mdid').value = info.id;
   document.getElementById('f-chlatest').value = '0';
@@ -1345,6 +1589,9 @@ document.addEventListener('click', e => {
 
 // ── INIT ──────────────────────────────────────────────────────────────────────
 document.getElementById('panel-library').style.display = 'block';
+// Set theme button icon correctly
+const _themeBtn = document.getElementById('themeBtn');
+if (_themeBtn && document.body.classList.contains('light')) _themeBtn.textContent = '🌙';
 renderLib();
 setInterval(checkAllUpdates, 60 * 60 * 1000);
 </script>
