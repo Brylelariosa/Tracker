@@ -106,8 +106,9 @@ header { padding: 28px 0 20px; border-bottom: 1px solid var(--border); display: 
 .card-type { font-size:8px; letter-spacing:3px; text-transform:uppercase; margin-bottom:5px; }
 .type-manga{color:var(--accent)} .type-manhua{color:var(--accent2)} .type-manhwa{color:var(--accent3)}
 .card-title { font-family:'Noto Serif JP',serif; font-size:14px; font-weight:700; line-height:1.35; margin-bottom:10px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
-.card-meta { display:flex; justify-content:space-between; align-items:flex-start; gap:8px; }
-.card-actions { display:grid; grid-template-columns:1fr 1fr; gap:5px; width:80px; flex-shrink:0; }
+.card-meta { display:flex; flex-direction:column; gap:8px; }
+.card-ch-info { display:flex; flex-direction:column; }
+.card-actions { display:grid; grid-template-columns:repeat(3,1fr); gap:5px; }
 .ch-read { font-size:10px; color:var(--muted); }
 .ch-latest { font-size:12px; color:var(--text); margin-top:2px; }
 .ch-latest.new { color:var(--accent3); }
@@ -971,7 +972,7 @@ function renderLib() {
         '<div class="card-type type-' + m.type + '">' + m.type.toUpperCase() + '</div>' +
         '<div class="card-title">' + esc(m.title) + '</div>' +
         '<div class="card-meta">' +
-          '<div>' +
+          '<div class="card-ch-info">' +
             '<div class="ch-read">Read: Ch.' + (m.chRead || 0) + behindBadge + '</div>' +
             '<div class="ch-latest' + (hasNew ? ' new' : '') + '">Latest: ' + (m.chLatest > 0 ? 'Ch.' + m.chLatest : '?') + (hasNew ? ' ↑' : '') + '</div>' +
           '</div>' +
