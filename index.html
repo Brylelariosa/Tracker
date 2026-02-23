@@ -193,7 +193,7 @@ header { padding: 28px 0 20px; border-bottom: 1px solid var(--border); display: 
   <header>
     <div>
       <div class="logo-title">MANGA<span>TRACK</span></div>
-      <div class="logo-sub">MangaDex · MangaFire · Comix · Auto-detect</div>
+      <div class="logo-sub">MangaDex · comix.to · MangaFire · Auto-detect</div>
     </div>
     <div class="header-right">
       <button class="btn btn-outline" onclick="openImport()">⬆ IMPORT</button>
@@ -261,7 +261,7 @@ header { padding: 28px 0 20px; border-bottom: 1px solid var(--border); display: 
     </div>
     <div class="modal-body">
       <div class="info-note">
-        <strong>How it works:</strong> Search to auto-fill from MangaDex. Chapters are fetched from MangaDex feed. For manga not on MangaDex, paste any chapter-list page URL into <strong style="color:var(--accent2)">Custom Source URL</strong> — it auto-detects chapters from <strong style="color:var(--accent3)">mangafire.to, comix.to, bato.to, manganato, webtoons</strong> and many more sites.
+        <strong>How it works:</strong> Search to auto-fill from MangaDex. For other sites, paste a manga page URL into <strong style="color:var(--accent2)">Custom Source URL</strong>. Natively supports <strong style="color:var(--accent3)">comix.to</strong> (via API) and <strong style="color:var(--accent3)">mangafire.to</strong> (via internal API), plus generic HTML scraping for most other sites.
       </div>
 
       <div class="form-group" id="search-section">
@@ -427,119 +427,12 @@ header { padding: 28px 0 20px; border-bottom: 1px solid var(--border); display: 
 // ── CONSTANTS ─────────────────────────────────────────────────────────────────
 const MD = 'https://api.mangadex.org';
 const COVERS = 'https://uploads.mangadex.org/covers';
+const COMICK_API = 'https://api.comick.fun';
 const PROXIES = [
   'https://corsproxy.io/?',
   'https://api.allorigins.win/raw?url=',
   'https://thingproxy.freeboard.io/fetch/',
   'https://cors.eu.org/',
-  'https://proxy.cors.sh/',
-];
-
-// ── SITE-SPECIFIC RULES ───────────────────────────────────────────────────────
-// Each rule: { test, extract }
-// test(url) → true if this rule applies
-// extract(html, url) → chapter number or null
-const SITE_RULES = [
-
-  // ── mangafire.to ──────────────────────────────────────────────────────────
-  // Manga page: https://mangafire.to/manga/title.xxxxx
-  // Chapter links in HTML: href="/read/title.xxxxx/en/chapter-51"
-  {
-    test: url => url.includes('mangafire.to'),
-    extract: (html, url) => {
-      // 1. Extract from href="/read/…/chapter-N" links embedded in page HTML
-      const hrefs = [...html.matchAll(/href="\/read\/[^"]+\/(?:en|all|chapter)[-/](\d+(?:\.\d+)?)"/gi)];
-      if (hrefs.length) return Math.max(...hrefs.map(m => parseFloat(m[1])).filter(n => n > 0 && n < 99999));
-
-      // 2. JSON data sometimes embedded as: {"chapter":"51"} or "chapter":"51"
-      const jsonCh = [...html.matchAll(/"chapter"\s*:\s*"?(\d+(?:\.\d+)?)"?/g)];
-      if (jsonCh.length) return Math.max(...jsonCh.map(m => parseFloat(m[1])).filter(n => n > 0 && n < 99999));
-
-      // 3. Fallback: chapter-N anywhere in the HTML
-      const chapNums = [...html.matchAll(/chapter[-_](\d+(?:\.\d+)?)/gi)]
-        .map(m => parseFloat(m[1])).filter(n => n > 0 && n < 99999);
-      return chapNums.length ? Math.max(...chapNums) : null;
-    }
-  },
-
-  // ── comix.to ─────────────────────────────────────────────────────────────
-  // Manga page: https://comix.to/manga/title or https://comix.to/comic/title
-  // Chapter links: href="/read/title/chapter-51" or data-chapter="51"
-  {
-    test: url => url.includes('comix.to'),
-    extract: (html, url) => {
-      // 1. data-chapter="51" or data-ch="51" attributes
-      const dataCh = [...html.matchAll(/data-(?:chapter|ch)\s*=\s*"(\d+(?:\.\d+)?)"/gi)];
-      if (dataCh.length) return Math.max(...dataCh.map(m => parseFloat(m[1])).filter(n => n > 0 && n < 99999));
-
-      // 2. href links containing /chapter-N or /ch-N
-      const hrefs = [...html.matchAll(/href="[^"]*\/(?:chapter|ch)[-_](\d+(?:\.\d+)?)[/"]/gi)];
-      if (hrefs.length) return Math.max(...hrefs.map(m => parseFloat(m[1])).filter(n => n > 0 && n < 99999));
-
-      // 3. JSON: "chapter":51 or "chapterNumber":51
-      const jsonCh = [...html.matchAll(/"(?:chapter|chapterNumber|chap_num)"\s*:\s*(\d+(?:\.\d+)?)/g)];
-      if (jsonCh.length) return Math.max(...jsonCh.map(m => parseFloat(m[1])).filter(n => n > 0 && n < 99999));
-
-      // 4. Fallback generic
-      const chapNums = [...html.matchAll(/chapter[-_\s]+(\d+(?:\.\d+)?)/gi)]
-        .map(m => parseFloat(m[1])).filter(n => n > 0 && n < 99999);
-      return chapNums.length ? Math.max(...chapNums) : null;
-    }
-  },
-
-  // ── asurascans / reaperscans / similar ───────────────────────────────────
-  {
-    test: url => /asura|reaper|flame|luminous|void|night|drake|genesis|alpha|omega|arcane/.test(url),
-    extract: (html) => {
-      // These sites often embed chapter data in JSON blobs or <script> tags
-      const jsonMatch = html.match(/chapters\s*[:=]\s*(\[[\s\S]{0,4000}?\])/);
-      if (jsonMatch) {
-        try {
-          const arr = JSON.parse(jsonMatch[1]);
-          const nums = arr.map(c => parseFloat(c.chapter || c.chap || c.number || c.ch || 0)).filter(n => n > 0);
-          if (nums.length) return Math.max(...nums);
-        } catch {}
-      }
-      // Fallback to href
-      const hrefs = [...html.matchAll(/href="[^"]*\/(?:chapter|ch)[-_](\d+(?:\.\d+)?)[/"]/gi)];
-      if (hrefs.length) return Math.max(...hrefs.map(m => parseFloat(m[1])).filter(n => n > 0 && n < 99999));
-      return null;
-    }
-  },
-
-  // ── Webtoon / LineWebtoon ────────────────────────────────────────────────
-  {
-    test: url => url.includes('webtoons.com') || url.includes('webtoon.com'),
-    extract: (html) => {
-      // Episode numbers in data-episode-no or in episodeNo JSON
-      const epNos = [...html.matchAll(/(?:data-episode-no|episode_no|episodeNo)\s*[=:]\s*"?(\d+)"?/gi)];
-      if (epNos.length) return Math.max(...epNos.map(m => parseFloat(m[1])).filter(n => n > 0 && n < 99999));
-      return null;
-    }
-  },
-
-  // ── Bato.to ───────────────────────────────────────────────────────────────
-  {
-    test: url => url.includes('bato.to') || url.includes('battwo.com'),
-    extract: (html) => {
-      const hrefs = [...html.matchAll(/href="\/title\/[^"]*\/(\d+(?:\.\d+)?)[^"]*"/gi)];
-      if (hrefs.length) return Math.max(...hrefs.map(m => parseFloat(m[1])).filter(n => n > 0 && n < 99999));
-      const chapters = [...html.matchAll(/chapter\s+(\d+(?:\.\d+)?)/gi)]
-        .map(m => parseFloat(m[1])).filter(n => n > 0 && n < 99999);
-      return chapters.length ? Math.max(...chapters) : null;
-    }
-  },
-
-  // ── MangaNato / MangaKakalot / Readmangato ────────────────────────────────
-  {
-    test: url => /manganato|mangakakalot|readmanganato|mangabat/.test(url),
-    extract: (html) => {
-      // These sites have chapter links like /chapter-195
-      const hrefs = [...html.matchAll(/\/chapter-(\d+(?:\.\d+)?)/gi)]
-        .map(m => parseFloat(m[1])).filter(n => n > 0 && n < 99999);
-      return hrefs.length ? Math.max(...hrefs) : null;
-    }
-  },
 ];
 
 // ── STATE ─────────────────────────────────────────────────────────────────────
@@ -555,7 +448,7 @@ function saveLog() { localStorage.setItem('mgt2_log', JSON.stringify(updLog)); }
 function uid() { return Math.random().toString(36).slice(2, 10); }
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-// ── FETCH — race direct + all proxies simultaneously ──────────────────────────
+// ── FETCH helpers ─────────────────────────────────────────────────────────────
 function fetchWithTimeout(url, opts, ms) {
   return new Promise(resolve => {
     const timer = setTimeout(() => resolve(null), ms);
@@ -566,26 +459,31 @@ function fetchWithTimeout(url, opts, ms) {
   });
 }
 
-async function raceFetch(url, ms) {
-  ms = ms || 9000;
-  const headerSets = [
-    {},
-    { 'X-Requested-With': 'XMLHttpRequest' },
-    { 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' },
+// Try a JSON API url directly, then through proxies
+async function fetchJSON(url, ms = 8000) {
+  const attempts = [
+    fetchWithTimeout(url, { headers: { 'Accept': 'application/json' } }, ms),
+    ...PROXIES.map(p => fetchWithTimeout(p + encodeURIComponent(url), { headers: { 'X-Requested-With': 'XMLHttpRequest' } }, ms)),
   ];
   return new Promise(resolve => {
     let settled = 0;
-    const attempts = [
-      fetchWithTimeout(url, {}, ms),
-      ...PROXIES.flatMap((p, i) => {
-        const encoded = encodeURIComponent(url);
-        const hSet = headerSets[i % headerSets.length];
-        return [
-          fetchWithTimeout(p + encoded, { headers: hSet }, ms),
-          i < 2 ? fetchWithTimeout(p + url, { headers: hSet }, ms) : Promise.resolve(null),
-        ];
-      })
-    ];
+    const total = attempts.length;
+    attempts.forEach(p => p.then(async res => {
+      if (res) {
+        try { resolve(await res.json()); return; } catch {}
+      }
+      if (++settled === total) resolve(null);
+    }));
+  });
+}
+
+async function raceFetch(url, ms = 8000) {
+  const attempts = [
+    fetchWithTimeout(url, {}, ms),
+    ...PROXIES.map(p => fetchWithTimeout(p + encodeURIComponent(url), { headers: { 'X-Requested-With': 'XMLHttpRequest' } }, ms)),
+  ];
+  return new Promise(resolve => {
+    let settled = 0;
     const total = attempts.length;
     attempts.forEach(p => p.then(res => {
       if (res) { resolve(res); }
@@ -595,8 +493,8 @@ async function raceFetch(url, ms) {
 }
 
 async function mdFetch(path) {
-  const res = await raceFetch(MD + path, 8000);
-  if (res) return res.json();
+  const data = await fetchJSON(MD + path);
+  if (data) return data;
   throw new Error('MangaDex unreachable');
 }
 
@@ -614,51 +512,130 @@ function mdType(manga) {
   return 'manga';
 }
 
-// ── SCRAPE CHAPTER FROM ANY URL ───────────────────────────────────────────────
-async function scrapeChapterFromUrl(url) {
+// ── comix.to — uses the public api.comick.fun REST API ────────────────────────
+// URL pattern: https://comix.to/title/{slug}  e.g. 8lvn-transcension-academy
+async function comixChapter(url) {
+  // Extract slug from URL: /title/8lvn-transcension-academy
+  const slugMatch = url.match(/\/title\/([^/?#]+)/i);
+  if (!slugMatch) return null;
+  const slug = slugMatch[1];
+
+  // Step 1: get comic metadata to find the hid (internal ID)
+  // api.comick.fun/comic/{slug} returns {comic:{hid,last_chapter,...}}
+  const meta = await fetchJSON(`${COMICK_API}/comic/${slug}`);
+  if (!meta) return null;
+
+  // last_chapter is often directly in the response
+  const lastChDirect = parseFloat(meta?.comic?.last_chapter);
+  if (lastChDirect > 0) return lastChDirect;
+
+  // Step 2: fallback — fetch chapter list sorted desc and take first
+  const hid = meta?.comic?.hid;
+  if (!hid) return null;
+  const chapters = await fetchJSON(`${COMICK_API}/comic/${hid}/chapters?limit=1&order=desc&lang=en`);
+  if (!chapters?.chapters?.length) {
+    // Try without lang filter
+    const allCh = await fetchJSON(`${COMICK_API}/comic/${hid}/chapters?limit=1&order=desc`);
+    const ch = parseFloat(allCh?.chapters?.[0]?.chap);
+    return ch > 0 ? ch : null;
+  }
+  const ch = parseFloat(chapters.chapters[0]?.chap);
+  return ch > 0 ? ch : null;
+}
+
+// ── mangafire.to — uses internal Ajax API (no vrf token needed for chapter list)
+// URL pattern: https://mangafire.to/manga/{slug}.{id}  e.g. title.82p7o
+// The internal ID is the alphanumeric suffix after the dot
+async function mangafireChapter(url) {
+  // Extract the manga ID (e.g. "82p7o" from ".82p7o")
+  const idMatch = url.match(/\.([a-z0-9]+)\s*$/i);
+  if (!idMatch) return null;
+  const mangaId = idMatch[1];
+
+  // mangafire chapter list endpoint:
+  // GET /ajax/manga/{mangaId}/chapter  → JSON {status:200, result:{...}}
+  // The result contains chapter objects with "number" field
+  const ajaxUrl = `https://mangafire.to/ajax/manga/${mangaId}/chapter`;
+  const data = await fetchJSON(ajaxUrl);
+  if (data?.result) {
+    // result is an object keyed by language, each containing arrays of chapter objects
+    // Each chapter: {id, name, type, number, ...} or similar
+    const nums = [];
+    const result = data.result;
+    if (Array.isArray(result)) {
+      result.forEach(c => { const n = parseFloat(c.number || c.name || c.chapter); if (n > 0 && n < 99999) nums.push(n); });
+    } else if (typeof result === 'object') {
+      // keyed by lang
+      Object.values(result).forEach(lang => {
+        if (Array.isArray(lang)) lang.forEach(c => { const n = parseFloat(c.number || c.name); if (n > 0 && n < 99999) nums.push(n); });
+      });
+    }
+    if (nums.length) return Math.max(...nums);
+  }
+
+  // Fallback: try the HTML page via proxies and extract chapter numbers from hrefs
   const res = await raceFetch(url, 10000);
   if (!res) return null;
   const html = await res.text();
 
-  // 1. Try site-specific rules first (highest accuracy)
-  for (const rule of SITE_RULES) {
-    if (rule.test(url)) {
-      const n = rule.extract(html, url);
-      if (n > 0 && n < 99999) return n;
-      break; // matched a rule but got nothing — still fall through to generic
-    }
+  // mangafire chapter links: href="/read/slug.id/en/chapter-51"
+  const hrefs = [...html.matchAll(/href="\/read\/[^"]+\/(?:en|all)\/chapter-(\d+(?:\.\d+)?)/gi)]
+    .map(m => parseFloat(m[1])).filter(n => n > 0 && n < 99999);
+  if (hrefs.length) return Math.max(...hrefs);
+
+  // Generic fallback: chapter-N anywhere
+  const chapNums = [...html.matchAll(/chapter[-_](\d+(?:\.\d+)?)/gi)]
+    .map(m => parseFloat(m[1])).filter(n => n > 0 && n < 99999);
+  return chapNums.length ? Math.max(...chapNums) : null;
+}
+
+// ── SCRAPE CHAPTER FROM ANY URL ───────────────────────────────────────────────
+async function scrapeChapterFromUrl(url) {
+  // comix.to — API-first, no scraping needed
+  if (url.includes('comix.to')) {
+    return await comixChapter(url);
   }
 
-  // 2. Href links containing /chapter-N or /ch-N (very common pattern across sites)
+  // mangafire.to — try internal Ajax API first, then HTML fallback
+  if (url.includes('mangafire.to')) {
+    return await mangafireChapter(url);
+  }
+
+  // ── Generic HTML scraping for all other sites ─────────────────────────────
+  const res = await raceFetch(url, 9000);
+  if (!res) return null;
+  const html = await res.text();
+
+  // 1. href links with /chapter-N or /ch-N (most reliable cross-site signal)
   const hrefCh = [...html.matchAll(/href="[^"]*\/(?:chapter|ch|ep)[-_](\d+(?:\.\d+)?)[/"?#]/gi)]
     .map(m => parseFloat(m[1])).filter(n => n > 0 && n < 99999);
   if (hrefCh.length) return Math.max(...hrefCh);
 
-  // 3. data-chapter / data-chap attributes
+  // 2. data-chapter / data-num attributes
   const dataCh = [...html.matchAll(/data-(?:chapter|chap|num|number)\s*=\s*"(\d+(?:\.\d+)?)"/gi)]
     .map(m => parseFloat(m[1])).filter(n => n > 0 && n < 99999);
   if (dataCh.length) return Math.max(...dataCh);
 
-  // 4. JSON blobs: "chapter":"51" or "chapter":51
-  const jsonCh = [...html.matchAll(/"(?:chapter|chap|ch|chapterNumber|chapter_number)"\s*:\s*"?(\d+(?:\.\d+)?)"?/gi)]
+  // 3. JSON blobs with "chapter" key
+  const jsonCh = [...html.matchAll(/"(?:chapter|chap|chapterNumber|chapter_number)"\s*:\s*"?(\d+(?:\.\d+)?)"?/gi)]
     .map(m => parseFloat(m[1])).filter(n => n > 0 && n < 99999);
   if (jsonCh.length) return Math.max(...jsonCh);
 
-  // 5. "New Chapter ... Chapter 51" — arenascan / madara theme
+  // 4. "New Chapter ... Chapter 51" — madara theme
   const newCh = html.match(/New\s+Chapter[\s\S]{0,60}?(?:Chapter|Ch\.?)\s*([0-9]+(?:\.[0-9]+)?)/i);
   if (newCh) { const n = parseFloat(newCh[1]); if (n > 0 && n < 99999) return n; }
 
-  // 6. Slug-based: /manga/slug-chapter-51/ style
+  // 5. Slug-based: /manga/slug-chapter-51/ style
   const slugMatch = url.match(/\/(?:manga|comic|series|webtoon|manhwa|manhua)\/([^/]+)\/?$/i);
   if (slugMatch) {
-    const slug = slugMatch[1].replace(/\.[a-z0-9]{3,8}$/, ''); // strip .xxxxx from mangafire IDs
+    const slug = slugMatch[1].replace(/\.[a-z0-9]{3,8}$/, '');
     const escaped = slug.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/-/g, '[-_]');
     const re = new RegExp(escaped + '[-_](?:chapter[-_])?([0-9]+(?:\\.[0-9]+)?)', 'gi');
     const nums = [...html.matchAll(re)].map(m => parseFloat(m[1])).filter(n => n > 0 && n < 99999);
     if (nums.length) return Math.max(...nums);
   }
 
-  // 7. Generic "Chapter N" or "Ch. N" — last resort, take highest
+  // 6. Generic "Chapter N" — last resort
   const all = [...html.matchAll(/(?:chapter|ch\.?)\s*([0-9]+(?:\.[0-9]+)?)/gi)]
     .map(m => parseFloat(m[1])).filter(n => n > 0 && n < 9999);
   if (all.length) return Math.max(...all);
