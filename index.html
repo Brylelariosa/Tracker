@@ -362,10 +362,10 @@ header { padding:28px 0 20px; border-bottom:1px solid var(--border); display:fle
 .detail-overlay.open { display:flex; }
 body.detail-open { overflow:hidden;position:fixed;width:100%; }
 .detail-modal { background:var(--card);border:1px solid var(--border);width:100%;max-width:680px;animation:slideUp .25s ease;display:flex;flex-direction:column;margin:auto;overflow:hidden; }
-/* Desktop: side-by-side cover + info */
+/* Desktop: side-by-side */
 .detail-hero { display:flex;gap:0;position:relative;align-items:stretch; }
-.detail-cover-wrap { width:200px;min-width:200px;flex-shrink:0;overflow:hidden;align-self:stretch; }
-.detail-cover { width:100%;height:100%;object-fit:cover;object-position:center top;display:block;min-height:280px; }
+.detail-cover-wrap { width:190px;min-width:190px;flex-shrink:0;overflow:hidden;align-self:stretch; }
+.detail-cover { width:100%;height:100%;object-fit:cover;object-position:center center;display:block;min-height:280px; }
 .detail-cover-ph { width:100%;min-height:280px;background:linear-gradient(135deg,var(--surface),var(--border));display:flex;align-items:center;justify-content:center;font-size:60px; }
 .detail-hero-info { flex:1;padding:18px;display:flex;flex-direction:column;gap:6px;min-width:0;overflow:hidden; }
 .detail-type { font-size:8px;letter-spacing:3px;text-transform:uppercase;color:var(--muted); }
@@ -382,14 +382,14 @@ body.detail-open { overflow:hidden;position:fixed;width:100%; }
 .detail-stat-label { font-size:8px;color:var(--muted);letter-spacing:1.5px;text-transform:uppercase; }
 .detail-actions { display:flex;gap:8px;flex-wrap:wrap;padding:0 18px 16px; }
 .detail-loading { text-align:center;padding:16px;color:var(--muted);font-size:10px;letter-spacing:2px;animation:pulse 1s infinite; }
-/* Mobile: full-width banner cover, no wasted space */
+/* Mobile: portrait cover, full width, no side gaps */
 @media(max-width:500px){
   .detail-overlay { padding:0; }
   .detail-modal { max-height:100dvh;border-left:none;border-right:none;border-top:none; }
   .detail-hero { flex-direction:column; }
-  .detail-cover-wrap { width:100%;min-width:unset;max-height:55vw; }
-  .detail-cover { width:100%;height:55vw;max-height:55vw;min-height:unset;object-fit:cover;object-position:center top; }
-  .detail-cover-ph { min-height:180px;max-height:55vw; }
+  .detail-cover-wrap { width:100%;min-width:unset; }
+  .detail-cover { width:100%;height:auto;min-height:unset;aspect-ratio:3/4;object-fit:cover;object-position:center center;display:block; }
+  .detail-cover-ph { min-height:200px; }
   .detail-hero-info { padding:12px 14px;gap:5px; }
   .detail-body { padding:10px 14px;gap:10px; }
   .detail-actions { padding:0 14px 14px; }
@@ -1996,11 +1996,10 @@ async function fetchMangaDetail(mdId) {
     const desc = attrs.description?.en || Object.values(attrs.description||{})[0] || '';
     const descEl = document.getElementById('detail-desc');
     if (desc) {
-      // Strip markdown links, horizontal rules, and clean up whitespace
       const cleanDesc = desc
-        .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')  // [text](url) → text
-        .replace(/^---+$/gm, '')                        // --- lines
-        .replace(/\n{3,}/g, '\n\n')                    // collapse 3+ newlines
+        .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+        .replace(/^-{2,}$/gm, '')
+        .replace(/\n{3,}/g, '\n\n')
         .trim();
       descEl.textContent = cleanDesc;
       descEl.style.display = 'block';
