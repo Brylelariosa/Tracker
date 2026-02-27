@@ -358,34 +358,41 @@ header { padding:28px 0 20px; border-bottom:1px solid var(--border); display:fle
 .pag-btn.active { border-color:var(--accent);color:var(--accent);background:rgba(232,56,90,.1); }
 
 /* ── CARD DETAIL MODAL ───────────────────────────────────── */
-.detail-overlay { display:none;position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:250;backdrop-filter:blur(8px);align-items:flex-start;justify-content:center;padding:20px;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch; }
+.detail-overlay { display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:250;backdrop-filter:blur(8px);align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;touch-action:pan-y; }
 .detail-overlay.open { display:flex; }
-/* body scroll intentionally NOT locked — overscroll-behavior:contain handles it */
-.detail-modal { background:var(--card);border:1px solid var(--border);width:100%;max-width:680px;animation:slideUp .25s ease;display:flex;flex-direction:column;margin:auto; }
+body.detail-open { overflow:hidden;position:fixed;width:100%; }
+.detail-modal { background:var(--card);border:1px solid var(--border);width:100%;max-width:680px;animation:slideUp .25s ease;display:flex;flex-direction:column;margin:auto;overflow:hidden; }
+/* Desktop: side-by-side cover + info */
 .detail-hero { display:flex;gap:0;position:relative;align-items:stretch; }
-.detail-cover-wrap { width:180px;min-width:180px;flex-shrink:0;overflow:hidden; }
-.detail-cover { width:100%;height:100%;object-fit:cover;object-position:center;display:block;min-height:260px; }
-.detail-cover-ph { width:100%;min-height:260px;background:linear-gradient(135deg,var(--surface),var(--border));display:flex;align-items:center;justify-content:center;font-size:60px; }
-.detail-hero-info { flex:1;padding:20px;display:flex;flex-direction:column;gap:8px;min-width:0; }
+.detail-cover-wrap { width:200px;min-width:200px;flex-shrink:0;overflow:hidden;align-self:stretch; }
+.detail-cover { width:100%;height:100%;object-fit:cover;object-position:center top;display:block;min-height:280px; }
+.detail-cover-ph { width:100%;min-height:280px;background:linear-gradient(135deg,var(--surface),var(--border));display:flex;align-items:center;justify-content:center;font-size:60px; }
+.detail-hero-info { flex:1;padding:18px;display:flex;flex-direction:column;gap:6px;min-width:0;overflow:hidden; }
 .detail-type { font-size:8px;letter-spacing:3px;text-transform:uppercase;color:var(--muted); }
-.detail-title { font-family:'Noto Serif JP',serif;font-size:18px;font-weight:900;line-height:1.3; }
+.detail-title { font-family:'Noto Serif JP',serif;font-size:17px;font-weight:900;line-height:1.3;word-break:break-word; }
 .detail-author { font-size:10px;color:var(--muted);letter-spacing:.5px; }
 .detail-author span { color:var(--accent3); }
-.detail-tags { display:flex;flex-wrap:wrap;gap:4px;margin-top:4px; }
+.detail-tags { display:flex;flex-wrap:wrap;gap:4px;margin-top:2px; }
 .detail-tag { font-size:8px;padding:2px 7px;background:var(--surface);border:1px solid var(--border);color:var(--muted);letter-spacing:.5px; }
-.detail-body { padding:18px 20px;display:flex;flex-direction:column;gap:14px; }
-.detail-desc { font-size:11px;color:var(--muted);line-height:1.7;letter-spacing:.3px; }
-.detail-stats { display:flex;gap:20px;flex-wrap:wrap; }
+.detail-body { padding:14px 18px;display:flex;flex-direction:column;gap:12px; }
+.detail-desc { font-size:11px;color:var(--muted);line-height:1.7;letter-spacing:.3px;word-break:break-word;overflow-wrap:break-word; }
+.detail-stats { display:flex;gap:16px;flex-wrap:wrap; }
 .detail-stat { display:flex;flex-direction:column;gap:2px; }
 .detail-stat-val { font-family:'Bebas Neue',sans-serif;font-size:22px;line-height:1; }
 .detail-stat-label { font-size:8px;color:var(--muted);letter-spacing:1.5px;text-transform:uppercase; }
-.detail-actions { display:flex;gap:8px;flex-wrap:wrap;padding:0 20px 18px; }
-.detail-loading { text-align:center;padding:20px;color:var(--muted);font-size:10px;letter-spacing:2px;animation:pulse 1s infinite; }
+.detail-actions { display:flex;gap:8px;flex-wrap:wrap;padding:0 18px 16px; }
+.detail-loading { text-align:center;padding:16px;color:var(--muted);font-size:10px;letter-spacing:2px;animation:pulse 1s infinite; }
+/* Mobile: full-width banner cover, no wasted space */
 @media(max-width:500px){
+  .detail-overlay { padding:0; }
+  .detail-modal { max-height:100dvh;border-left:none;border-right:none;border-top:none; }
   .detail-hero { flex-direction:column; }
-  .detail-cover-wrap { width:100%;min-width:unset; }
-  .detail-cover { min-height:220px;height:220px; }
-  .detail-cover-ph { min-height:220px; }
+  .detail-cover-wrap { width:100%;min-width:unset;max-height:55vw; }
+  .detail-cover { width:100%;height:55vw;max-height:55vw;min-height:unset;object-fit:cover;object-position:center top; }
+  .detail-cover-ph { min-height:180px;max-height:55vw; }
+  .detail-hero-info { padding:12px 14px;gap:5px; }
+  .detail-body { padding:10px 14px;gap:10px; }
+  .detail-actions { padding:0 14px 14px; }
 }
 </style>
 </head>
@@ -1967,12 +1974,19 @@ function openDetail(id) {
   if (m.cover) { img.src = m.cover; img.style.display = ''; ph.style.display = 'none'; ph.textContent = ''; }
   else { img.style.display = 'none'; ph.style.display = 'flex'; ph.textContent = m.title.charAt(0).toUpperCase(); }
   modal.classList.add('open');
+  window._detailScrollY = window.scrollY;
+  document.body.style.top = '-' + window.scrollY + 'px';
   document.body.classList.add('detail-open');
   // Fetch full details from MangaDex if we have an ID
   if (m.mdId) fetchMangaDetail(m.mdId);
   else document.getElementById('detail-loading').style.display = 'none';
 }
-function closeDetail() { document.getElementById('detail-modal').classList.remove('open'); document.body.classList.remove('detail-open'); }
+function closeDetail() {
+  document.getElementById('detail-modal').classList.remove('open');
+  document.body.classList.remove('detail-open');
+  document.body.style.top = '';
+  window.scrollTo(0, window._detailScrollY || 0);
+}
 async function fetchMangaDetail(mdId) {
   try {
     const d = await mdFetch('/manga/'+mdId+'?includes[]=author&includes[]=artist&includes[]=cover_art');
@@ -1981,7 +1995,16 @@ async function fetchMangaDetail(mdId) {
     // Description
     const desc = attrs.description?.en || Object.values(attrs.description||{})[0] || '';
     const descEl = document.getElementById('detail-desc');
-    if (desc) { descEl.textContent = desc; descEl.style.display = 'block'; }
+    if (desc) {
+      // Strip markdown links, horizontal rules, and clean up whitespace
+      const cleanDesc = desc
+        .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')  // [text](url) → text
+        .replace(/^---+$/gm, '')                        // --- lines
+        .replace(/\n{3,}/g, '\n\n')                    // collapse 3+ newlines
+        .trim();
+      descEl.textContent = cleanDesc;
+      descEl.style.display = 'block';
+    }
     // Authors / artists
     const authors = (manga.relationships||[]).filter(r=>r.type==='author').map(r=>r.attributes?.name).filter(Boolean);
     const artists = (manga.relationships||[]).filter(r=>r.type==='artist').map(r=>r.attributes?.name).filter(Boolean);
