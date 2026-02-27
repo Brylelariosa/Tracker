@@ -362,19 +362,21 @@ header { padding:28px 0 20px; border-bottom:1px solid var(--border); display:fle
 .detail-overlay.open { display:flex; }
 body.detail-open { overflow:hidden;position:fixed;width:100%; }
 .detail-modal { background:var(--card);border:1px solid var(--border);width:100%;max-width:680px;animation:slideUp .25s ease;display:flex;flex-direction:column;margin:auto;overflow:hidden; }
-/* Both desktop & mobile: side-by-side cover + info */
+/* Cover + right column layout: cover stays aligned alongside title, synopsis & stats */
 .detail-hero { display:flex;gap:0;position:relative;align-items:stretch; }
 .detail-cover-wrap { width:130px;min-width:130px;flex-shrink:0;overflow:hidden;align-self:stretch; }
-.detail-cover { width:100%;height:100%;object-fit:cover;object-position:center center;display:block;min-height:195px; }
-.detail-cover-ph { width:100%;min-height:195px;background:linear-gradient(135deg,var(--surface),var(--border));display:flex;align-items:center;justify-content:center;font-size:48px; }
-.detail-hero-info { flex:1;padding:14px;display:flex;flex-direction:column;gap:5px;min-width:0;overflow:hidden; }
+.detail-cover { width:100%;height:100%;object-fit:cover;object-position:center top;display:block;min-height:100%; }
+.detail-cover-ph { width:100%;height:100%;min-height:220px;background:linear-gradient(135deg,var(--surface),var(--border));display:flex;align-items:center;justify-content:center;font-size:48px; }
+/* Right column: stacks info, body, and actions vertically */
+.detail-hero-right { flex:1;display:flex;flex-direction:column;min-width:0;overflow:hidden; }
+.detail-hero-info { padding:14px;display:flex;flex-direction:column;gap:5px;min-width:0;overflow:hidden; }
 .detail-type { font-size:8px;letter-spacing:3px;text-transform:uppercase;color:var(--muted); }
 .detail-title { font-family:'Noto Serif JP',serif;font-size:15px;font-weight:900;line-height:1.3;word-break:break-word; }
 .detail-author { font-size:10px;color:var(--muted);letter-spacing:.5px; }
 .detail-author span { color:var(--accent3); }
 .detail-tags { display:flex;flex-wrap:wrap;gap:3px;margin-top:2px; }
 .detail-tag { font-size:8px;padding:2px 6px;background:var(--surface);border:1px solid var(--border);color:var(--muted);letter-spacing:.5px; }
-.detail-body { padding:12px 14px;display:flex;flex-direction:column;gap:10px; }
+.detail-body { padding:0 14px 12px;display:flex;flex-direction:column;gap:10px; }
 .detail-desc { font-size:11px;color:var(--muted);line-height:1.65;letter-spacing:.3px;word-break:break-word;overflow-wrap:break-word; }
 .detail-stats { display:flex;gap:14px;flex-wrap:wrap; }
 .detail-stat { display:flex;flex-direction:column;gap:2px; }
@@ -385,13 +387,10 @@ body.detail-open { overflow:hidden;position:fixed;width:100%; }
 @media(max-width:500px){
   .detail-overlay { padding:0; }
   .detail-modal { max-height:100dvh;border-left:none;border-right:none;border-top:none; }
-  /* Keep side-by-side on mobile, slightly wider cover */
-  .detail-cover-wrap { width:120px;min-width:120px; }
-  .detail-cover { min-height:180px; }
-  .detail-cover-ph { min-height:180px; }
-  .detail-hero-info { padding:12px 10px; }
-  .detail-body { padding:10px 12px; }
-  .detail-actions { padding:0 12px 12px;gap:6px; }
+  .detail-cover-wrap { width:110px;min-width:110px; }
+  .detail-hero-info { padding:10px 10px; }
+  .detail-body { padding:0 10px 10px; }
+  .detail-actions { padding:0 10px 10px;gap:6px; }
   .detail-actions .btn { font-size:9px;padding:7px 8px; }
 }
 </style>
@@ -588,20 +587,22 @@ body.detail-open { overflow:hidden;position:fixed;width:100%; }
         <img class="detail-cover" id="detail-cover-img" src="" referrerpolicy="no-referrer" alt="" onerror="this.style.display='none';document.getElementById('detail-cover-ph').style.display='flex'">
         <div class="detail-cover-ph" id="detail-cover-ph" style="display:none"></div>
       </div>
-      <div class="detail-hero-info">
-        <div class="detail-type" id="detail-type"></div>
-        <div class="detail-title" id="detail-title"></div>
-        <div class="detail-author" id="detail-author"></div>
-        <div class="detail-tags" id="detail-tags"></div>
-        <div id="detail-cr" style="margin-top:4px"></div>
+      <div class="detail-hero-right">
+        <div class="detail-hero-info">
+          <div class="detail-type" id="detail-type"></div>
+          <div class="detail-title" id="detail-title"></div>
+          <div class="detail-author" id="detail-author"></div>
+          <div class="detail-tags" id="detail-tags"></div>
+          <div id="detail-cr" style="margin-top:4px"></div>
+        </div>
+        <div class="detail-body">
+          <div id="detail-loading" class="detail-loading">Fetching details…</div>
+          <div id="detail-desc" class="detail-desc" style="display:none"></div>
+          <div class="detail-stats" id="detail-stats"></div>
+        </div>
+        <div class="detail-actions" id="detail-actions"></div>
       </div>
     </div>
-    <div class="detail-body">
-      <div id="detail-loading" class="detail-loading">Fetching details…</div>
-      <div id="detail-desc" class="detail-desc" style="display:none"></div>
-      <div class="detail-stats" id="detail-stats"></div>
-    </div>
-    <div class="detail-actions" id="detail-actions"></div>
   </div>
 </div>
 
